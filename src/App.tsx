@@ -72,7 +72,7 @@ type MenuResponse = {
   deliveryOriginLongitude: number | null;
   categories: { id: string; name: string; products: Product[] }[];
 };
-type Restaurant = { id: string; name: string; address: string; phone: string; dineInEnabled: boolean; deliveryEnabled: boolean; deliveryAcceptingOrders?: boolean; deliveryFee: number; deliveryPerKm: number | null; deliveryMinimumOrder: number };
+type Restaurant = { id: string; name: string; address: string; phone: string; dineInEnabled: boolean; deliveryEnabled: boolean; deliveryAcceptingOrders?: boolean; deliveryFee: number; deliveryPerKm: number | null; deliveryMinimumOrder: number; deliveryOriginLatitude: number | null; deliveryOriginLongitude: number | null };
 
 type ContactAddress = { id: string | null; label: string; address: string; latitude?: number | null; longitude?: number | null; isDefault: boolean };
 type ContactProfile = { name: string; phone: string; address: string; addresses: ContactAddress[]; shareWithRestaurant: boolean };
@@ -267,7 +267,6 @@ function App() {
   const [productQuantity, setProductQuantity] = useState(1);
   const [productNote, setProductNote] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
-  const [deliveryQuote, setDeliveryQuote] = useState<{ tenantId: string; addressId: string; latitude: number; longitude: number; distanceKm: number; fee: number } | null>(null);
   const [cartNote, setCartNote] = useState("");
   const [cartOpen, setCartOpen] = useState(false);
   const [lineNoteKey, setLineNoteKey] = useState<string | null>(null);
@@ -300,11 +299,10 @@ function App() {
   const [pushMessage, setPushMessage] = useState("");
   const [pushError, setPushError] = useState("");
   const [addressLocationBusy, setAddressLocationBusy] = useState<number | null>(null);
+  const [expandedAddressId, setExpandedAddressId] = useState<string | null>(null);
   const productDialogScroll = useRef<HTMLDivElement>(null);
   const auth = useMemo(() => getFirebaseAuth(), []);
   const orderType = menu?.isTableQr ? "DINE_IN" : "DELIVERY";
-  const activeDeliveryQuote = deliveryQuote?.tenantId === menu?.tenantId &&
-    deliveryQuote?.addressId === selectedDeliveryAddressId ? deliveryQuote : null;
 
   const getPushMessaging = useCallback(async () => {
     if (!firebaseConfig.vapidKey || !firebaseConfig.messagingSenderId) {
@@ -424,7 +422,7 @@ function App() {
   }, [menuApiPath]);
 
   useEffect(() => {
-    if (!menu || !authUser) return;
+    if ((!menu && menuApiPath) || !authUser) return;
     let active = true;
     setProfileLoading(true);
     setProfileError("");
@@ -435,7 +433,10 @@ function App() {
           const savedProfile = contactProfileFromServer(profile);
           setContactProfile(savedProfile);
           setContactDraft(savedProfile);
-          setSelectedDeliveryAddressId(defaultAddressId(savedProfile));
+          setSelectedDeliveryAddressId((current) =>
+            savedProfile.addresses.some((address) => address.id === current)
+              ? current
+              : defaultAddressId(savedProfile));
         } else {
           setContactProfile(emptyContactProfile());
           setContactDraft((current) => ({ ...current, name: current.name || authUser.displayName?.trim() || "" }));
@@ -450,7 +451,7 @@ function App() {
     return () => {
       active = false;
     };
-  }, [authUser, menu]);
+  }, [authUser, menu, menuApiPath]);
 
   useEffect(() => {
     const onPopState = () => setView(isOrdersPath() ? "orders" : isProfilePath() ? "profile" : "menu");
@@ -568,13 +569,51 @@ function App() {
   }, [categories, categoryId, query]);
 
   const total = cart.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0);
-  const deliveryTotal = total + (menu?.isTableQr ? 0 : activeDeliveryQuote?.fee ?? menu?.deliveryFee ?? 0);
   const deliveryMinimumOrder = menu?.deliveryMinimumOrder ?? 0;
   const deliveryMinimumMet = menu?.isTableQr !== false || Math.round(total * 100) >= Math.round(deliveryMinimumOrder * 100);
   const count = cart.reduce((sum, line) => sum + line.quantity, 0);
   const selectedDeliveryAddress = contactProfile.addresses.find((address) => (address.id ?? "") === selectedDeliveryAddressId);
   const selectedAddressHasLocation = Number.isFinite(selectedDeliveryAddress?.latitude) &&
     Number.isFinite(selectedDeliveryAddress?.longitude);
+  const selectedAddressLocation = selectedAddressHasLocation && selectedDeliveryAddress
+    ? { latitude: selectedDeliveryAddress.latitude!, longitude: selectedDeliveryAddress.longitude! }
+    : null;
+  const deliveryDistanceKm = menu?.isTableQr === false &&
+    menu.deliveryPerKm !== null &&
+    Number.isFinite(menu.deliveryOriginLatitude) &&
+    Number.isFinite(menu.deliveryOriginLongitude) &&
+    selectedAddressLocation
+    ? distanceKm(
+      { latitude: menu.deliveryOriginLatitude!, longitude: menu.deliveryOriginLongitude! },
+      selectedAddressLocation,
+    )
+    : null;
+  const activeDeliveryQuote = deliveryDistanceKm !== null && menu?.isTableQr === false && menu.deliveryPerKm !== null
+    ? {
+      tenantId: menu.tenantId,
+      addressId: selectedDeliveryAddressId,
+      distanceKm: deliveryDistanceKm,
+      fee: Math.round(deliveryDistanceKm * menu.deliveryPerKm * 100) / 100,
+    }
+    : null;
+  const deliveryTotal = total + (menu?.isTableQr ? 0 : activeDeliveryQuote?.fee ?? menu?.deliveryFee ?? 0);
+  const directoryRestaurants = selectedAddressLocation
+    ? restaurants
+      .map((restaurant) => ({
+        restaurant,
+        distance: Number.isFinite(restaurant.deliveryOriginLatitude) && Number.isFinite(restaurant.deliveryOriginLongitude)
+          ? distanceKm(
+            selectedAddressLocation,
+            { latitude: restaurant.deliveryOriginLatitude!, longitude: restaurant.deliveryOriginLongitude! },
+          )
+          : null,
+      }))
+      .sort((a, b) => {
+        if (a.distance === null) return b.distance === null ? a.restaurant.name.localeCompare(b.restaurant.name, "tr") : 1;
+        if (b.distance === null) return -1;
+        return a.distance - b.distance;
+      })
+    : restaurants.map((restaurant) => ({ restaurant, distance: null }));
   const deliveryLocationReady = menu?.isTableQr !== false || menu?.deliveryPerKm === null || selectedAddressHasLocation;
   const deliveryProfileReady = !!authUser &&
     !profileLoading &&
@@ -730,6 +769,7 @@ function App() {
     };
     setProfileSaved(false);
     setContactDraft((current) => ({ ...current, addresses: [...current.addresses, address] }));
+    setExpandedAddressId(address.id);
     if (isFirst) setSelectedDeliveryAddressId(address.id ?? "");
   }
 
@@ -757,6 +797,9 @@ function App() {
     }
     setProfileSaved(false);
     setContactDraft((current) => ({ ...current, addresses }));
+    if (removed && expandedAddressId === (removed.id ?? `legacy-address-${index}`)) {
+      setExpandedAddressId(null);
+    }
     if (removed && (removed.id ?? "") === selectedDeliveryAddressId) {
       setSelectedDeliveryAddressId(defaultAddressId({ ...contactDraft, addresses }));
     }
@@ -853,8 +896,8 @@ function App() {
     setBusy(true);
     setActionError("");
     try {
-      if (orderType === "DELIVERY" && menu.deliveryPerKm !== null && !activeDeliveryQuote) {
-        if (menu.deliveryPerKm === null || menu.deliveryOriginLatitude === null || menu.deliveryOriginLongitude === null) {
+      if (orderType === "DELIVERY" && menu.deliveryPerKm !== null) {
+        if (menu.deliveryOriginLatitude === null || menu.deliveryOriginLongitude === null) {
           throw new Error("Restoran teslimat konumunu henüz ayarlamadı.");
         }
         if (!selectedDeliveryAddress ||
@@ -862,18 +905,9 @@ function App() {
           !Number.isFinite(selectedDeliveryAddress.longitude)) {
           throw new Error("Seçtiğiniz adresin konumunu Bilgilerim bölümünde kaydedin.");
         }
-        const customerLocation = {
-          latitude: selectedDeliveryAddress.latitude!,
-          longitude: selectedDeliveryAddress.longitude!,
-        };
-        const distance = distanceKm(
-          { latitude: menu.deliveryOriginLatitude, longitude: menu.deliveryOriginLongitude },
-          customerLocation,
-        );
-        const fee = Math.round(distance * menu.deliveryPerKm * 100) / 100;
-        setDeliveryQuote({ tenantId: menu.tenantId, addressId: selectedDeliveryAddressId, ...customerLocation, distanceKm: distance, fee });
-        setActionError(`Kayıtlı adresinizden yol ücreti hesaplandı: ${money.format(fee)}. Siparişi göndermek için tekrar dokunun.`);
-        return;
+        if (!activeDeliveryQuote || activeDeliveryQuote.addressId !== selectedDeliveryAddressId) {
+          throw new Error("Seçili adres için yol ücreti hesaplanamadı. Adres konumunu kontrol edin.");
+        }
       }
       const currentAuth = getFirebaseAuth();
       const provider =
@@ -909,7 +943,6 @@ function App() {
         },
       );
       setCart([]);
-      setDeliveryQuote(null);
       setCartNote("");
       setCartOpen(false);
       setOrderSent(true);
@@ -1073,19 +1106,6 @@ function App() {
                 <h1>Siparişlerim</h1>
                 <p>QR Menü üzerinden verdiğiniz siparişleri hesabınızla takip edin.</p>
               </div>
-              {authUser && (
-                <section className="notification-settings">
-                  <div>
-                    <strong>Sipariş bildirimleri</strong>
-                    <p>Onay, iptal ve ödeme durumlarını bu cihazda alın.</p>
-                  </div>
-                  <button className="secondary-button" disabled={pushBusy} onClick={() => void toggleOrderNotifications()}>
-                    {pushBusy ? "Kaydediliyor…" : pushRegistered ? "Bildirimleri kapat" : "Bildirimleri aç"}
-                  </button>
-                  {pushMessage && <p className="profile-saved" role="status">{pushMessage}</p>}
-                  {pushError && <p className="inline-error" role="alert">{pushError}</p>}
-                </section>
-              )}
               {!authReady ? (
                 <p className="orders-message"><span className="loader" /> Oturum kontrol ediliyor…</p>
               ) : !authUser ? (
@@ -1180,21 +1200,44 @@ function App() {
             <div className="profile-heading">
               <span className="eyebrow">YAKININDAKİ LEZZETLER</span>
               <h1>Restoranlar</h1>
-              <p>Restoran seçin, menüyü keşfedin ve adresinize sipariş verin.</p>
+              <p>Restoranlar kayıtlı adresinize olan uzaklığa göre sıralanır. Menüden eve sipariş verebilirsiniz.</p>
             </div>
+            {authUser && profileLoading ? (
+              <p className="directory-address-status"><span className="loader" /> Kayıtlı adresler yükleniyor…</p>
+            ) : authUser && profileError ? (
+              <p className="inline-error" role="alert">{profileError}</p>
+            ) : authUser && contactProfile.addresses.length > 1 ? (
+              <label className="field-label directory-address-select">
+                Yakınlığı hesaplanacak adres
+                <select value={selectedDeliveryAddressId} onChange={(event) => setSelectedDeliveryAddressId(event.target.value)}>
+                  {contactProfile.addresses.map((address, index) => (
+                    <option key={address.id ?? `directory-address-${index}`} value={address.id ?? ""}>
+                      {address.label || `Adres ${index + 1}`}{address.isDefault ? " · Varsayılan" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : authUser && selectedDeliveryAddress ? (
+              <p className="directory-address-status">
+                Seçili adres: {selectedDeliveryAddress.label || selectedDeliveryAddress.address}
+                {!selectedAddressHasLocation && " · Yakınlığa göre sıralama için bu adresin konumunu Bilgilerim’den kaydedin."}
+              </p>
+            ) : authUser ? (
+              <p className="directory-address-status">Yakınlığa göre sıralama için Bilgilerim’e teslimat adresi ekleyip konumunu kaydedin.</p>
+            ) : authReady ? (
+              <p className="directory-address-status">Kayıtlı adresinize göre sıralama için Siparişlerim’den giriş yapın; adres konumunuzu Bilgilerim’de kaydedin.</p>
+            ) : null}
             {restaurantsLoading ? (
             <p className="orders-message"><span className="loader" /> Restoranlar yükleniyor…</p>
           ) : restaurants.length ? (
             <div className="restaurant-list">
-              {restaurants.map((restaurant) => (
+              {directoryRestaurants.map(({ restaurant }) => (
                 <a className="restaurant-card" href={`/restaurant/${encodeURIComponent(restaurant.id)}`} key={restaurant.id}>
                   <span className="brand-mark">{restaurant.name.trim().charAt(0).toLocaleUpperCase("tr-TR") || "R"}</span>
                   <span>
                     <strong>{restaurant.name}</strong>
                     <small className="restaurant-order-types">
-                      Eve teslimat · Yol ücreti {restaurant.deliveryPerKm === null
-                        ? money.format(restaurant.deliveryFee)
-                        : `${money.format(restaurant.deliveryPerKm)} / km`}{restaurant.deliveryMinimumOrder > 0 ? ` · Min. sepet ${money.format(restaurant.deliveryMinimumOrder)}` : ""}{restaurant.dineInEnabled ? " · Masa QR" : ""}
+                      Eve teslimat{restaurant.deliveryMinimumOrder > 0 ? ` · Min. sipariş ${money.format(restaurant.deliveryMinimumOrder)}` : ""}{restaurant.dineInEnabled ? " · Masa QR" : ""}
                     </small>
                     {restaurant.deliveryAcceptingOrders === false && <small className="delivery-paused-label">Şu an online eve siparişi alınmıyor.</small>}
                     <small>{[restaurant.address, restaurant.phone].filter(Boolean).join(" · ") || "Menüyü görüntüle · Eve sipariş ver"}</small>
@@ -1278,7 +1321,7 @@ function App() {
           <div className="profile-heading">
             <span className="eyebrow">HESAP BİLGİLERİ</span>
             <h1>Bilgilerim</h1>
-            <p>Telefon ve adres bilgilerinizi düzenleyin, restorana otomatik paylaşım tercihinizi yönetin.</p>
+            <p>Telefon ve adres bilgilerinizi, restorana otomatik paylaşımı ve sipariş bildirimlerini yönetin.</p>
           </div>
           <section className="profile-card">
             {!authReady ? (
@@ -1312,62 +1355,93 @@ function App() {
                     </div>
                     <span>{contactDraft.addresses.length}/{MAX_SAVED_ADDRESSES}</span>
                   </div>
-                  {contactDraft.addresses.map((entry, index) => (
-                    <article className="saved-address-card" key={entry.id ?? `legacy-address-${index}`}>
+                  {contactDraft.addresses.map((entry, index) => {
+                    const addressId = entry.id ?? `legacy-address-${index}`;
+                    const expanded = expandedAddressId === addressId;
+                    const hasLocation = Number.isFinite(entry.latitude) && Number.isFinite(entry.longitude);
+                    return (
+                      <article className="saved-address-card" key={addressId}>
                       <div className="saved-address-card-heading">
-                        <strong>{entry.label || `Adres ${index + 1}`}</strong>
-                        <button type="button" className="text-button" onClick={() => removeContactAddress(index)}>Sil</button>
-                      </div>
-                      <label className="field-label">
-                        Adres etiketi
-                        <input
-                          type="text"
-                          maxLength={60}
-                          value={entry.label}
-                          onChange={(event) => updateContactAddress(index, { label: event.target.value })}
-                          placeholder="Ev, İş"
-                        />
-                      </label>
-                      <label className="field-label">
-                        Açık adres
-                        <textarea
-                          autoComplete="street-address"
-                          maxLength={300}
-                          value={entry.address}
-                          onChange={(event) => updateContactAddress(index, { address: event.target.value })}
-                          placeholder="Mahalle, cadde, bina ve daire bilgisi"
-                        />
-                      </label>
-                      <div className="address-location-settings">
                         <button
                           type="button"
-                          className="secondary-button"
-                          disabled={addressLocationBusy !== null || profileSaving}
-                          onClick={() => void saveAddressLocation(index)}
+                          className="saved-address-summary"
+                          aria-expanded={expanded}
+                          onClick={() => setExpandedAddressId(expanded ? null : addressId)}
                         >
-                          {addressLocationBusy === index
-                            ? "Konum alınıyor…"
-                            : Number.isFinite(entry.latitude) && Number.isFinite(entry.longitude)
-                              ? "Konumu güncelle"
-                              : "Bu adresin konumunu kaydet"}
+                          <span className="saved-address-title">
+                            <strong>{entry.label || `Adres ${index + 1}`}</strong>
+                            {entry.isDefault && <small>Varsayılan</small>}
+                          </span>
+                          <span className="saved-address-preview">{entry.address || "Açık adres ekleyin"}</span>
+                          <span className={hasLocation ? "saved-address-location saved" : "saved-address-location"}>
+                            {hasLocation ? "Konum kayıtlı" : "Konum eklenmedi"}
+                          </span>
                         </button>
-                        <small>
-                          {Number.isFinite(entry.latitude) && Number.isFinite(entry.longitude)
-                            ? `Konum kayıtlı (${entry.latitude!.toFixed(5)}, ${entry.longitude!.toFixed(5)})`
-                            : "Bu adresteyken konumu kaydedin. Sonraki siparişlerde yeniden GPS izni gerekmez."}
-                        </small>
+                        <div className="saved-address-actions">
+                          <button
+                            type="button"
+                            className="text-button edit-address-button"
+                            aria-label={`${entry.label || `Adres ${index + 1}`} adresini ${expanded ? "kapat" : "düzenle"}`}
+                            onClick={() => setExpandedAddressId(expanded ? null : addressId)}
+                          >
+                            {expanded ? "Kapat" : "Düzenle"}
+                          </button>
+                          <button type="button" className="text-button" onClick={() => removeContactAddress(index)}>Sil</button>
+                        </div>
                       </div>
-                      <label className="default-address-choice">
-                        <input
-                          type="radio"
-                          name="default-delivery-address"
-                          checked={entry.isDefault}
-                          onChange={() => setDefaultContactAddress(index)}
-                        />
-                        Varsayılan adres
-                      </label>
-                    </article>
-                  ))}
+                      {expanded && <div className="saved-address-fields">
+                        <label className="field-label">
+                          Adres etiketi
+                          <input
+                            type="text"
+                            maxLength={60}
+                            value={entry.label}
+                            onChange={(event) => updateContactAddress(index, { label: event.target.value })}
+                            placeholder="Ev, İş"
+                          />
+                        </label>
+                        <label className="field-label">
+                          Açık adres
+                          <textarea
+                            autoComplete="street-address"
+                            maxLength={300}
+                            value={entry.address}
+                            onChange={(event) => updateContactAddress(index, { address: event.target.value })}
+                            placeholder="Mahalle, cadde, bina ve daire bilgisi"
+                          />
+                        </label>
+                        <div className="address-location-settings">
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            disabled={addressLocationBusy !== null || profileSaving}
+                            onClick={() => void saveAddressLocation(index)}
+                          >
+                            {addressLocationBusy === index
+                              ? "Konum alınıyor…"
+                              : hasLocation
+                                ? "Konumu güncelle"
+                                : "Bu adresin konumunu kaydet"}
+                          </button>
+                          <small>
+                            {hasLocation
+                              ? `Konum kayıtlı (${entry.latitude!.toFixed(5)}, ${entry.longitude!.toFixed(5)})`
+                              : "Bu adresteyken konumu kaydedin. Sonraki siparişlerde yeniden GPS izni gerekmez."}
+                          </small>
+                        </div>
+                        <label className="default-address-choice">
+                          <input
+                            type="radio"
+                            name="default-delivery-address"
+                            checked={entry.isDefault}
+                            onChange={() => setDefaultContactAddress(index)}
+                          />
+                          Varsayılan adres
+                        </label>
+                      </div>}
+                      </article>
+                    );
+                  })}
                   <button
                     type="button"
                     className="secondary-button add-address-button"
@@ -1390,8 +1464,8 @@ function App() {
                 </label>
                 <section className="notification-settings profile-notification-settings">
                   <div>
-                    <strong>Sipariş bildirimleri</strong>
-                    <p>Onay, iptal ve ödeme durumlarını bu cihazda alın.</p>
+                    <strong>Bildirim ayarları</strong>
+                    <p>Bu cihazda sipariş onay, iptal ve ödeme bildirimlerini açıp kapatın.</p>
                   </div>
                   <button className="secondary-button" disabled={pushBusy} onClick={() => void toggleOrderNotifications()}>
                     {pushBusy ? "Kaydediliyor…" : pushRegistered ? "Bildirimleri kapat" : "Bildirimleri aç"}
@@ -1422,19 +1496,6 @@ function App() {
             <h1>Siparişlerim</h1>
             <p>QR Menü hesabınızla verdiğiniz siparişleri ve tutar bilgilerini buradan takip edebilirsiniz.</p>
           </div>
-          {authUser && (
-            <section className="notification-settings">
-              <div>
-                <strong>Sipariş bildirimleri</strong>
-                <p>Onay, iptal ve ödeme durumlarını bu cihazda alın.</p>
-              </div>
-              <button className="secondary-button" disabled={pushBusy} onClick={() => void toggleOrderNotifications()}>
-                {pushBusy ? "Kaydediliyor…" : pushRegistered ? "Bildirimleri kapat" : "Bildirimleri aç"}
-              </button>
-              {pushMessage && <p className="profile-saved" role="status">{pushMessage}</p>}
-              {pushError && <p className="inline-error" role="alert">{pushError}</p>}
-            </section>
-          )}
           {!authUser ? (
             <section className="orders-login">
               <p>Siparişlerinizi görmek için Google veya Apple hesabınızla giriş yapın.</p>
@@ -1489,15 +1550,11 @@ function App() {
         </main>
       ) : <main>
         <section className="menu-section" aria-label="Menü">
-          {!menu.isTableQr && (menu.address || menu.phone || menu.deliveryEnabled) && (
+          {!menu.isTableQr && (menu.address || menu.phone || (menu.deliveryEnabled && menu.deliveryMinimumOrder > 0)) && (
             <div className="restaurant-contact">
               {menu.address && <span>{menu.address}</span>}
               {menu.phone && <a href={`tel:${menu.phone.replace(/[^\d+]/g, "")}`}>{menu.phone}</a>}
-              {menu.deliveryEnabled && <span>
-                Yol ücreti: {menu.deliveryPerKm === null
-                  ? money.format(menu.deliveryFee)
-                  : `${money.format(menu.deliveryPerKm)} / km`}
-              </span>}
+              {menu.deliveryEnabled && menu.deliveryMinimumOrder > 0 && <span>Minimum sipariş {money.format(menu.deliveryMinimumOrder)}</span>}
             </div>
           )}
           {!menu.isTableQr && menu.deliveryAcceptingOrders === false && (
@@ -1768,11 +1825,9 @@ function App() {
                     Sipariş notu
                     <textarea maxLength={200} value={cartNote} onChange={(event) => setCartNote(event.target.value)} placeholder="Restorana iletmek istediğiniz bir not var mı?" />
                   </label>
-                  {!menu.isTableQr && <div className="total-row">
+                  {!menu.isTableQr && (menu.deliveryPerKm === null || activeDeliveryQuote) && <div className="total-row">
                     <span>{activeDeliveryQuote ? `Yol ücreti (${activeDeliveryQuote.distanceKm.toFixed(2)} km)` : "Yol ücreti"}</span>
-                    <strong>{activeDeliveryQuote ? money.format(activeDeliveryQuote.fee) : menu.deliveryPerKm === null
-                      ? money.format(menu.deliveryFee)
-                      : `${money.format(menu.deliveryPerKm)} / km · kayıtlı adres konumuna göre hesaplanır`}</strong>
+                    <strong>{activeDeliveryQuote ? money.format(activeDeliveryQuote.fee) : money.format(menu.deliveryFee)}</strong>
                   </div>}
                   <div className="total-row"><span>{menu.isTableQr ? "Toplam" : activeDeliveryQuote || menu.deliveryPerKm === null ? "Tahmini toplam" : "Ürünler toplamı"}</span><strong>{money.format(menu.isTableQr ? total : deliveryTotal)}</strong></div>
                   {!menu.isTableQr && deliveryMinimumOrder > 0 && (
@@ -1786,11 +1841,13 @@ function App() {
                     ? "Masa siparişi restoran onayına gönderilir."
                     : activeDeliveryQuote
                       ? "Restoran ücreti kontrol eder. Ücret artarsa yeni tutar onayınıza sunulur; ödeme restoranda alınır."
-                      : "Teslimat ücreti her siparişte mevcut konumunuz ve restoran konumu arasındaki kuş uçuşu mesafeye göre hesaplanır."}</p>
+                      : menu.deliveryPerKm !== null
+                        ? "Yol ücreti, sipariş öncesinde kayıtlı adresiniz ve restoran konumuna göre hesaplanır."
+                        : "Teslimat ücreti toplam tutara eklenmiştir. Ödeme restoranda alınır."}</p>
                   {!authReady ? <p className="cart-auth-hint">Oturum kontrol ediliyor…</p> : authUser ? (
                     <div className="cart-auth-ready">
                       <button className="primary-button" disabled={busy || (!menu.isTableQr && (menu.deliveryAcceptingOrders === false || !deliveryProfileReady || !deliveryMinimumMet || !deliveryLocationReady))} onClick={() => requestOrder("google")}>
-                        {busy ? "İşleniyor…" : !menu.isTableQr && menu.deliveryPerKm !== null && !activeDeliveryQuote ? "Yol ücretini hesapla" : "Siparişi ver"}
+                        {busy ? "İşleniyor…" : "Siparişi ver"}
                       </button>
                     </div>
                   ) : (

@@ -93,7 +93,7 @@ Token Google veya Apple üzerinden Firebase Authentication'dan alınır.
 
 | Method ve path | Auth | İstek / yanıt |
 |---|---|---|
-| `GET /m/restaurants` | Public | `{restaurants}`; yalnız QR ve teslimata açık, menüsü yayınlanmış restoranlar; restoran başına `deliveryMinimumOrder` ve `deliveryAcceptingOrders` |
+| `GET /m/restaurants` | Public | `{restaurants}`; yalnız QR ve teslimata açık, menüsü yayınlanmış restoranlar; varsa restoran koordinatları, `deliveryMinimumOrder` ve `deliveryAcceptingOrders`. Giriş yapmış müşterinin seçili kayıtlı adresine göre en yakından uzağa sıralanır; mesafe sınırı uygulanmaz. QR açılışında yol ücreti gösterilmez; sepet açıldığında kayıtlı adres konumuna göre otomatik hesaplanıp toplamda gösterilir. |
 | `GET /m/:tableToken/menu` | Public | Restoran/masa bilgisi, `categories` ve QR/teslimat ayarları; `deliveryMinimumOrder` |
 | `GET /m/restaurants/:tenantId/menu` | Public | Aynı menu response; `table:null`, `isTableQr:false`, `deliveryAcceptingOrders` |
 | `GET /m/profile/current` | Firebase Bearer | `{profile:null}` veya `{profile:{name,phone,address,shareWithRestaurant}}` |
