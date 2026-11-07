@@ -64,7 +64,7 @@
 .modifier-option input { accent-color:#37402e;width:16px;height:16px; }
 .modifier-option small { margin-left:auto;color:#9b7c42;font-size:11px; }
 .field-label { display:flex;flex-direction:column;gap:7px;margin:17px 0 10px;color:#555249;font-size:12px;font-weight:700; }
-.field-label input,.field-label textarea { width:100%;min-height:43px;padding:11px 12px;border:1px solid #e7e4dc;border-radius:10px;background:#fff;font-size:12px;font-weight:400;resize:vertical; }
+.field-label input,.field-label textarea,.field-label select { width:100%;min-height:43px;padding:11px 12px;border:1px solid #e7e4dc;border-radius:10px;background:#fff;font-size:12px;font-weight:400;resize:vertical; }
 .field-label textarea { min-height:74px; }
 .share-contact-check { display:flex;align-items:flex-start;gap:10px;margin:12px 0;padding:12px;border:1px solid #e9e5db;border-radius:12px;background:#faf9f6;cursor:pointer; }
 .share-contact-check input { flex:none;width:17px;height:17px;margin:1px 0 0;accent-color:#30352b; }
@@ -122,6 +122,16 @@
 .profile-account .secondary-button { min-height:34px;padding:0 11px;font-size:11px; }
 .profile-card .field-label { margin-top:0;margin-bottom:18px; }
 .profile-card .field-label textarea { min-height:110px; }
+.saved-addresses { display:flex;flex-direction:column;gap:12px;margin:2px 0 20px; }
+.saved-addresses-heading { display:flex;align-items:center;justify-content:space-between;gap:10px; }
+.saved-addresses-heading > div { display:flex;flex-direction:column;gap:4px; }.saved-addresses-heading strong { color:#45433c;font-size:13px; }.saved-addresses-heading small,.saved-addresses-heading > span { color:#858178;font-size:11px; }
+.saved-address-card { padding:14px;border:1px solid #eeece6;border-radius:12px;background:#faf9f6; }
+.saved-address-card-heading { display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;color:#45433c;font-size:12px; }
+.saved-address-card .field-label { margin:0 0 13px; }.saved-address-card .field-label textarea { min-height:86px; }
+.text-button { padding:4px 2px;border:0;background:transparent;color:#a5483d;font-size:11px;font-weight:750; }
+.default-address-choice { display:flex;align-items:center;gap:8px;color:#625f56;font-size:11px;font-weight:650; }.default-address-choice input { accent-color:#856426; }
+.add-address-button { align-self:flex-start;min-height:38px;padding:0 13px; }
+.delivery-address-select { margin-top:12px; }
 .profile-card .share-contact-check { margin:4px 0 14px; }
 .profile-privacy-copy { margin:12px 0 0;font-size:11px; }
 .profile-saved { margin:12px 0 0;padding:9px 11px;border-radius:9px;background:#e9f2e9;color:#4f8057;font-size:12px;font-weight:650; }

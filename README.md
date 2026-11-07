@@ -107,6 +107,10 @@ Token Google veya Apple üzerinden Firebase Authentication'dan alınır.
 | `GET /m/:tableToken/orders/:id?sessionId=<uuid>` | Firebase Bearer | `{status,number,reason}` |
 | `GET /m/account/history/orders` | Firebase Bearer | Hesap sahibinin son 100 restoranlar arası QR siparişi |
 
+Profil uçları en fazla 10 kayıtlı teslimat adresi döndürür ve kaydeder:
+`addresses:[{id,label,address,isDefault}]`. Eski `address` alanı varsayılan
+adresle uyumluluk için korunur.
+
 Sipariş request body:
 
 ```json
@@ -127,14 +131,24 @@ Sipariş request body:
 
 `orderType` masada `DINE_IN`, restoran menüsünde `DELIVERY` olmalıdır.
 `items` 1–40 satır, her `quantity` 1–20 aralığındadır; `sessionId` UUID'dir.
+Teslimat siparişinde `deliveryAddressId` seçilen kayıtlı adresi belirtir.
+Profildeki adresler hesapta saklanır; yalnızca seçilen adres siparişle
+restorana iletilir.
 İstemci fiyat/ara toplam göndermez. Cloud menü snapshot'ından tahmini tutarı
 hesaplar, POS kasası onay sırasında kendi veritabanından fiyatı tekrar hesaplar.
 `id` UUID alanı tekrar gönderimi idempotent yapmak için opsiyoneldir.
+Km bazlı teslimat siparişi ayrıca
+`"customerLocation":{"latitude":41.01,"longitude":28.97}` içerir. Konum her
+sipariş sırasında istenir; Cloud restoran koordinatlarıyla Haversine mesafesini
+hesaplar ve km ücretini kuruşa yuvarlar. GPS koordinatları müşteri profiline
+veya sipariş kaydına yazılmaz. Konum izni alınamazsa teslimat siparişi
+gönderilmez.
 
 Profil PUT gövdesi:
-`{"name":"…","phone":"…","address":"…","shareWithRestaurant":false}`.
-Telefon/adres profil sahibine aittir; restorana yalnız `shareWithRestaurant`
-açık ve sipariş gönderim koşulları sağlanmışsa paylaşılır.
+`{"name":"…","phone":"…","addresses":[{"id":"UUID","label":"Ev","address":"…","isDefault":true}],"shareWithRestaurant":false}`.
+Restorana yalnız `shareWithRestaurant` açıkken seçilen adres ve telefon
+gönderilir. Eski istemcilerdeki tek `address` alanı varsayılan adres olarak
+desteklenir.
 
 Cloud istek sınırları daima geçerlidir; masada 3 bekleyen sipariş sınırı ve
 IP/tenant rate limit aşılınca 429, engellenmiş müşteri 403, gerekli Firebase
@@ -147,6 +161,10 @@ kuralları [POS Cloud API referansında](../pos-cloud/README.md#qr-menü-apisi).
   bağlantısı doğrudan masaya gider ve teslimat seçeneği sunmaz.
 - İstemcide görülen tutar tahmindir. Ürün fiyatı, seçenek fiyatı, indirim,
   teslimat ücreti ve kesin toplam POS tarafından onayda belirlenir.
+- POS teslimat ücretini tahminden yükseltirse müşteri sipariş geçmişinde yeni
+  ücreti kabul edebilir veya siparişi iptal edebilir. Yanıt gelmediğinde
+  sipariş otomatik iptal olmaz; personel müşteriyi arayıp kararı POS'tan
+  kaydedebilir.
 - Sipariş önce Cloud'da `PENDING` olur; kasaya aktarılır, personel onaylar veya
   reddeder. Onay gerçek POS adisyonu oluşturur; müşteri geçmişi Cloud'dan
   durum ve son tutarı alır.
@@ -155,8 +173,10 @@ kuralları [POS Cloud API referansında](../pos-cloud/README.md#qr-menü-apisi).
   değiştiyse eski ve yeni ücreti ve kesin toplamı bildirir. Push için HTTPS,
   Firebase Messaging Sender ID, Web Push VAPID public key ve Cloud'da Firebase
   Admin service-account credential gerekir.
-- Profil ve sipariş geçmişi Firebase UID'ye bağlıdır. Kullanıcı farklı
-  cihazlarda aynı Firebase hesabıyla giriş yaparsa geçmişine erişebilir.
+- Profil, kayıtlı adresler ve sipariş geçmişi Firebase UID'ye bağlıdır.
+  Kullanıcı farklı cihazlarda aynı Firebase hesabıyla giriş yaparsa
+  adreslerine ve geçmişine erişebilir. Km ücreti için cihaz GPS'i her siparişte
+  anlık kullanılır; GPS koordinatları kaydedilmez.
 - Menüdeki restaurant address/phone/delivery fee POS/Cloud ayarlarından gelir;
   frontend bunları değiştirmez. Teslimat bölgesi/minimum sepet tutarı burada
   tanımlı değildir.

@@ -65,11 +65,40 @@ type MenuResponse = {
   dineInEnabled: boolean;
   deliveryEnabled: boolean;
   deliveryFee: number;
+  deliveryPerKm: number | null;
+  deliveryOriginLatitude: number | null;
+  deliveryOriginLongitude: number | null;
   categories: { id: string; name: string; products: Product[] }[];
 };
-type Restaurant = { id: string; name: string; address: string; phone: string; dineInEnabled: boolean; deliveryEnabled: boolean; deliveryFee: number };
+type Restaurant = { id: string; name: string; address: string; phone: string; dineInEnabled: boolean; deliveryEnabled: boolean; deliveryFee: number; deliveryPerKm: number | null };
 
-type ContactProfile = { name: string; phone: string; address: string; shareWithRestaurant: boolean };
+type ContactAddress = { id: string | null; label: string; address: string; isDefault: boolean };
+type ContactProfile = { name: string; phone: string; address: string; addresses: ContactAddress[]; shareWithRestaurant: boolean };
+const MAX_SAVED_ADDRESSES = 10;
+
+function emptyContactProfile(): ContactProfile {
+  return { name: "", phone: "", address: "", addresses: [], shareWithRestaurant: false };
+}
+
+function defaultAddressId(profile: ContactProfile) {
+  return profile.addresses.find((address) => address.isDefault)?.id
+    ?? profile.addresses[0]?.id
+    ?? "";
+}
+
+function contactProfileFromServer(profile: Partial<ContactProfile>): ContactProfile {
+  const address = typeof profile.address === "string" ? profile.address : "";
+  const addresses = profile.addresses ?? (address.trim()
+    ? [{ id: null, label: "Adres", address, isDefault: true }]
+    : []);
+  return {
+    name: profile.name ?? "",
+    phone: profile.phone ?? "",
+    address,
+    addresses,
+    shareWithRestaurant: profile.shareWithRestaurant === true,
+  };
+}
 
 type CartLine = {
   key: string;
@@ -86,13 +115,16 @@ type CustomerOrder = {
   id: string;
   items: { productId: string; productName?: string; choiceNames?: string[]; quantity: number; unitPrice?: number; note?: string; modifierIds?: string[]; menuOptionIds?: string[] }[];
   orderType: "DINE_IN" | "DELIVERY";
-  status: "PENDING" | "CLAIMED" | "RECEIVED" | "APPROVED" | "REJECTED" | "PAID";
+  status: "PENDING" | "CLAIMED" | "RECEIVED" | "FEE_CONFIRMATION" | "FEE_ACCEPTED" | "FEE_CANCELLED" | "APPROVED" | "REJECTED" | "PAID";
+  tenantId: string;
+  sessionId: string;
   localNumber: number | null;
   amount: number | null;
   subtotal: number | null;
   discount: number | null;
   deliveryFee: number | null;
   estimatedDeliveryFee: number | null;
+  deliveryDistanceKm: number | null;
   paymentDetails: { method: string; amount: number; provider?: string | null; paidAt: string }[] | null;
   claimedAt: string | null;
   receivedAt: string | null;
@@ -141,7 +173,7 @@ function contactProfileKey(menu: MenuResponse) {
 
 function readContactProfile(menu: MenuResponse): ContactProfile {
   const saved = localStorage.getItem(contactProfileKey(menu));
-  if (!saved) return { name: "", phone: "", address: "", shareWithRestaurant: false };
+  if (!saved) return emptyContactProfile();
   const value: unknown = JSON.parse(saved);
   if (!value || typeof value !== "object" || !("phone" in value) || !("address" in value) ||
     typeof value.phone !== "string" || typeof value.address !== "string" ||
@@ -149,10 +181,12 @@ function readContactProfile(menu: MenuResponse): ContactProfile {
     ("shareWithRestaurant" in value && typeof value.shareWithRestaurant !== "boolean")) {
     throw new Error("Kayıtlı telefon/adres bilgileri okunamadı. Bilgilerim bölümünden yeniden kaydedin.");
   }
+  const address = value.address.slice(0, 300);
   return {
     name: "name" in value && typeof value.name === "string" ? value.name.slice(0, 100) : "",
     phone: value.phone.slice(0, 40),
-    address: value.address.slice(0, 300),
+    address,
+    addresses: address.trim() ? [{ id: null, label: "Adres", address, isDefault: true }] : [],
     shareWithRestaurant: false,
   };
 }
@@ -231,6 +265,7 @@ function App() {
   const [productQuantity, setProductQuantity] = useState(1);
   const [productNote, setProductNote] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
+  const [deliveryQuote, setDeliveryQuote] = useState<{ tenantId: string; latitude: number; longitude: number; distanceKm: number; fee: number } | null>(null);
   const [cartNote, setCartNote] = useState("");
   const [cartOpen, setCartOpen] = useState(false);
   const [lineNoteKey, setLineNoteKey] = useState<string | null>(null);
@@ -247,10 +282,13 @@ function App() {
   const [deliverySessionId] = useState(() => getDeliverySessionId(restaurantId ?? token ?? "directory"));
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState("");
+  const [feeResponseBusy, setFeeResponseBusy] = useState<string | null>(null);
+  const [feeResponseMessage, setFeeResponseMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
-  const [contactProfile, setContactProfile] = useState<ContactProfile>({ name: "", phone: "", address: "", shareWithRestaurant: false });
-  const [contactDraft, setContactDraft] = useState<ContactProfile>({ name: "", phone: "", address: "", shareWithRestaurant: false });
+  const [contactProfile, setContactProfile] = useState<ContactProfile>(emptyContactProfile);
+  const [contactDraft, setContactDraft] = useState<ContactProfile>(emptyContactProfile);
+  const [selectedDeliveryAddressId, setSelectedDeliveryAddressId] = useState("");
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
@@ -262,6 +300,7 @@ function App() {
   const productDialogScroll = useRef<HTMLDivElement>(null);
   const auth = useMemo(() => getFirebaseAuth(), []);
   const orderType = menu?.isTableQr ? "DINE_IN" : "DELIVERY";
+  const activeDeliveryQuote = deliveryQuote?.tenantId === menu?.tenantId ? deliveryQuote : null;
 
   const getPushMessaging = useCallback(async () => {
     if (!firebaseConfig.vapidKey || !firebaseConfig.messagingSenderId) {
@@ -367,6 +406,7 @@ function App() {
         try {
           const profile = readContactProfile(data);
           setContactDraft(profile);
+          setSelectedDeliveryAddressId(defaultAddressId(profile));
         } catch (error) {
           setActionError(error instanceof Error ? error.message : "Kayıtlı bilgiler okunamadı.");
         }
@@ -384,14 +424,16 @@ function App() {
     let active = true;
     setProfileLoading(true);
     setProfileError("");
-    void customerRequest<{ profile: ContactProfile | null }>(authUser, "/m/profile/current")
+    void customerRequest<{ profile: Partial<ContactProfile> | null }>(authUser, "/m/profile/current")
       .then(({ profile }) => {
         if (!active) return;
         if (profile) {
-          setContactProfile(profile);
-          setContactDraft(profile);
+          const savedProfile = contactProfileFromServer(profile);
+          setContactProfile(savedProfile);
+          setContactDraft(savedProfile);
+          setSelectedDeliveryAddressId(defaultAddressId(savedProfile));
         } else {
-          setContactProfile({ name: "", phone: "", address: "", shareWithRestaurant: false });
+          setContactProfile(emptyContactProfile());
           setContactDraft((current) => ({ ...current, name: current.name || authUser.displayName?.trim() || "" }));
         }
       })
@@ -522,12 +564,13 @@ function App() {
   }, [categories, categoryId, query]);
 
   const total = cart.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0);
-  const deliveryTotal = total + (menu?.isTableQr ? 0 : menu?.deliveryFee ?? 0);
+  const deliveryTotal = total + (menu?.isTableQr ? 0 : activeDeliveryQuote?.fee ?? menu?.deliveryFee ?? 0);
   const count = cart.reduce((sum, line) => sum + line.quantity, 0);
+  const selectedDeliveryAddress = contactProfile.addresses.find((address) => (address.id ?? "") === selectedDeliveryAddressId);
   const deliveryProfileReady = !!authUser &&
     !profileLoading &&
     contactProfile.shareWithRestaurant &&
-    !!contactProfile.address.trim() &&
+    !!selectedDeliveryAddress?.address.trim() &&
     !!contactProfile.phone.trim();
 
   function openProduct(product: Product) {
@@ -597,12 +640,23 @@ function App() {
 
   async function saveContactProfile() {
     if (!menu || !authUser) return;
+    const addresses = contactDraft.addresses.map((entry) => ({
+      id: entry.id ?? crypto.randomUUID(),
+      label: entry.label.trim(),
+      address: entry.address.trim(),
+      isDefault: entry.isDefault,
+    }));
     const profile = {
       ...contactDraft,
       name: contactDraft.name.trim() || authUser.displayName?.trim() || "",
       phone: contactDraft.phone.trim(),
-      address: contactDraft.address.trim(),
+      address: addresses.find((entry) => entry.isDefault)?.address ?? "",
+      addresses,
     };
+    if (addresses.length > MAX_SAVED_ADDRESSES || addresses.some((entry) => !entry.label || !entry.address)) {
+      setActionError("Her adres için bir etiket ve açık adres girin. En fazla 10 adres ekleyebilirsiniz.");
+      return;
+    }
     if (profile.shareWithRestaurant && !profile.name && !authUser.displayName?.trim()) {
       setActionError("Otomatik paylaşım için adınızı girin.");
       return;
@@ -620,6 +674,7 @@ function App() {
       });
       setContactProfile(result.profile);
       setContactDraft(result.profile);
+      setSelectedDeliveryAddressId(defaultAddressId(result.profile));
       setActionError("");
       setProfileError("");
       setProfileSaved(true);
@@ -635,6 +690,53 @@ function App() {
     }
   }
 
+  function updateContactAddress(index: number, patch: Partial<ContactAddress>) {
+    setProfileSaved(false);
+    setContactDraft((current) => ({
+      ...current,
+      addresses: current.addresses.map((address, addressIndex) =>
+        addressIndex === index ? { ...address, ...patch } : address,
+      ),
+    }));
+  }
+
+  function addContactAddress() {
+    if (contactDraft.addresses.length >= MAX_SAVED_ADDRESSES) return;
+    const isFirst = contactDraft.addresses.length === 0;
+    const address: ContactAddress = {
+      id: crypto.randomUUID(),
+      label: `Adres ${contactDraft.addresses.length + 1}`,
+      address: "",
+      isDefault: isFirst,
+    };
+    setProfileSaved(false);
+    setContactDraft((current) => ({ ...current, addresses: [...current.addresses, address] }));
+    if (isFirst) setSelectedDeliveryAddressId(address.id ?? "");
+  }
+
+  function removeContactAddress(index: number) {
+    const removed = contactDraft.addresses[index];
+    const addresses = contactDraft.addresses.filter((_, addressIndex) => addressIndex !== index);
+    if (removed?.isDefault && addresses.length > 0) {
+      addresses[0] = { ...addresses[0], isDefault: true };
+    }
+    setProfileSaved(false);
+    setContactDraft((current) => ({ ...current, addresses }));
+    if (removed && (removed.id ?? "") === selectedDeliveryAddressId) {
+      setSelectedDeliveryAddressId(defaultAddressId({ ...contactDraft, addresses }));
+    }
+  }
+
+  function setDefaultContactAddress(index: number) {
+    const address = contactDraft.addresses[index];
+    setProfileSaved(false);
+    setContactDraft((current) => ({
+      ...current,
+      addresses: current.addresses.map((entry, addressIndex) => ({ ...entry, isDefault: addressIndex === index })),
+    }));
+    if (address) setSelectedDeliveryAddressId(address.id ?? "");
+  }
+
   function openLineNote(line: CartLine) {
     setLineNoteKey(line.key);
     setLineNoteDraft(line.note);
@@ -643,6 +745,31 @@ function App() {
   function dataNoticeKey() {
     const shopKey = menu?.shop.trim().toLocaleLowerCase("tr-TR") ?? "unknown";
     return `qr-name-notice:v1:${firebaseConfig.projectId}:${shopKey}`;
+  }
+
+  function getCurrentLocation(): Promise<GeolocationPosition> {
+    if (!navigator.geolocation) return Promise.reject(new Error("Bu cihaz konum bilgisini desteklemiyor."));
+    return new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, (error) => {
+        const message = error.code === error.PERMISSION_DENIED
+          ? "Teslimat siparişi için konum izni gereklidir."
+          : error.code === error.TIMEOUT
+            ? "Konum alınamadı. Lütfen tekrar deneyin."
+            : "Konum bilgisi alınamadı. Konum servislerini kontrol edin.";
+        reject(new Error(message));
+      }, { enableHighAccuracy: true, timeout: 15_000, maximumAge: 0 });
+    });
+  }
+
+  function distanceKm(from: { latitude: number; longitude: number }, to: { latitude: number; longitude: number }) {
+    const radians = (degrees: number) => degrees * Math.PI / 180;
+    const latitudeDelta = radians(to.latitude - from.latitude);
+    const longitudeDelta = radians(to.longitude - from.longitude);
+    const startLatitude = radians(from.latitude);
+    const endLatitude = radians(to.latitude);
+    const a = Math.sin(latitudeDelta / 2) ** 2 +
+      Math.cos(startLatitude) * Math.cos(endLatitude) * Math.sin(longitudeDelta / 2) ** 2;
+    return 2 * 6371.0088 * Math.asin(Math.sqrt(Math.min(1, a)));
   }
 
   function requestOrder(providerName: "google" | "apple") {
@@ -677,12 +804,27 @@ function App() {
   async function submitOrder(providerName: "google" | "apple") {
     if (!menu || !menuApiPath || cart.length === 0) return;
     if (orderType === "DELIVERY" && !deliveryProfileReady) {
-      setActionError("Eve teslimat için Bilgilerim bölümünde adres, telefon ve otomatik paylaşım gerekli.");
+      setActionError("Eve teslimat için Bilgilerim bölümünde seçili adres, telefon ve otomatik paylaşım gerekli.");
       return;
     }
     setBusy(true);
     setActionError("");
     try {
+      if (orderType === "DELIVERY" && menu.deliveryPerKm !== null && !activeDeliveryQuote) {
+        if (menu.deliveryPerKm === null || menu.deliveryOriginLatitude === null || menu.deliveryOriginLongitude === null) {
+          throw new Error("Restoran teslimat konumunu henüz ayarlamadı.");
+        }
+        const position = await getCurrentLocation();
+        const customerLocation = { latitude: position.coords.latitude, longitude: position.coords.longitude };
+        const distance = distanceKm(
+          { latitude: menu.deliveryOriginLatitude, longitude: menu.deliveryOriginLongitude },
+          customerLocation,
+        );
+        const fee = Math.round(distance * menu.deliveryPerKm * 100) / 100;
+        setDeliveryQuote({ tenantId: menu.tenantId, ...customerLocation, distanceKm: distance, fee });
+        setActionError(`Konumunuzdan yol ücreti hesaplandı: ${money.format(fee)}. Siparişi göndermek için tekrar dokunun.`);
+        return;
+      }
       const currentAuth = getFirebaseAuth();
       const provider =
         providerName === "google"
@@ -701,6 +843,10 @@ function App() {
           body: JSON.stringify({
             sessionId: menu.isTableQr ? tableSessionId : deliverySessionId,
             orderType,
+            ...(!menu.isTableQr && selectedDeliveryAddressId && { deliveryAddressId: selectedDeliveryAddressId }),
+            ...(activeDeliveryQuote && {
+              customerLocation: { latitude: activeDeliveryQuote.latitude, longitude: activeDeliveryQuote.longitude },
+            }),
             note: cartNote.trim() || undefined,
             ...(contactProfile.shareWithRestaurant && {
               shareContactDetails: true,
@@ -716,6 +862,7 @@ function App() {
         },
       );
       setCart([]);
+      setDeliveryQuote(null);
       setCartNote("");
       setCartOpen(false);
       setOrderSent(true);
@@ -763,8 +910,9 @@ function App() {
       setAuthUser(null);
       setOrders([]);
       setOrdersError("");
-      setContactProfile({ name: "", phone: "", address: "", shareWithRestaurant: false });
-      setContactDraft({ name: "", phone: "", address: "", shareWithRestaurant: false });
+      setContactProfile(emptyContactProfile());
+      setContactDraft(emptyContactProfile());
+      setSelectedDeliveryAddressId("");
     } catch (error) {
       setOrdersError(error instanceof Error ? error.message : "Oturum kapatılamadı.");
     }
@@ -773,10 +921,55 @@ function App() {
   function orderStatusLabel(status: CustomerOrder["status"]) {
     if (status === "PAID") return "Ödendi";
     if (status === "APPROVED") return "Onaylandı";
+    if (status === "FEE_CONFIRMATION") return "Teslimat ücreti onayınızı bekliyor";
+    if (status === "FEE_ACCEPTED") return "Ücret kabul edildi";
+    if (status === "FEE_CANCELLED") return "İptal edildi";
     if (status === "REJECTED") return "Reddedildi";
     if (status === "RECEIVED") return "Restorana iletildi";
     if (status === "CLAIMED") return "Restoran siparişinizi aldı";
     return "İletildi";
+  }
+
+  async function respondToFee(order: CustomerOrder, decision: "ACCEPTED" | "CANCELLED") {
+    if (!authUser) {
+      setOrdersError("Ücret teklifini yanıtlamak için sipariş verdiğiniz hesapla giriş yapın.");
+      return;
+    }
+    if (decision === "CANCELLED" && !window.confirm("Ücret teklifini reddedip bu siparişi iptal etmek istiyor musunuz?")) return;
+    setFeeResponseBusy(order.id);
+    setOrdersError("");
+    setFeeResponseMessage("");
+    try {
+      await customerRequest(authUser, `/m/restaurants/${encodeURIComponent(order.tenantId)}/orders/${encodeURIComponent(order.id)}/fee-response`, {
+        method: "POST",
+        body: JSON.stringify({ sessionId: order.sessionId, decision }),
+      });
+      setFeeResponseMessage(decision === "ACCEPTED"
+        ? "Teslimat ücreti kabul edildi. Restoran siparişinizi işleme alacak."
+        : "Teslimat ücreti reddedildi ve sipariş iptal edildi.");
+    } catch (error) {
+      setOrdersError(error instanceof Error ? error.message : "Ücret teklifi yanıtınız gönderilemedi.");
+    } finally {
+      setFeeResponseBusy(null);
+    }
+  }
+
+  function feeResponseControls(order: CustomerOrder) {
+    if (order.status !== "FEE_CONFIRMATION") return null;
+    return (
+      <section className="customer-order-payment">
+        <strong>Yeni teslimat ücreti onayı</strong>
+        <span>Ücreti kabul edebilir veya siparişi iptal edebilirsiniz. Yanıt gelene kadar sipariş beklemede kalır.</span>
+        <div className="auth-actions">
+          <button className="primary-button" disabled={feeResponseBusy === order.id} onClick={() => void respondToFee(order, "ACCEPTED")}>
+            {feeResponseBusy === order.id ? "Gönderiliyor…" : "Ücreti kabul et"}
+          </button>
+          <button className="secondary-button" disabled={feeResponseBusy === order.id} onClick={() => void respondToFee(order, "CANCELLED")}>
+            Siparişi iptal et
+          </button>
+        </div>
+      </section>
+    );
   }
 
   function paymentMethodLabel(method: string) {
@@ -870,7 +1063,7 @@ function App() {
                           <strong>{order.restaurantName ?? "Restoran"} · {order.orderType === "DELIVERY" ? "Eve teslimat" : `Masa ${order.tableName ?? "QR"}`}{order.localNumber ? ` · #${order.localNumber}` : ""}</strong>
                           <span>{new Date(order.createdAt).toLocaleString("tr-TR")}</span>
                         </div>
-                        <span className={`order-status ${order.status === "APPROVED" ? "is-approved" : order.status === "REJECTED" ? "is-rejected" : ""}`}>
+                        <span className={`order-status ${order.status === "APPROVED" || order.status === "FEE_ACCEPTED" ? "is-approved" : order.status === "REJECTED" || order.status === "FEE_CANCELLED" ? "is-rejected" : ""}`}>
                           {orderStatusLabel(order.status)}
                         </span>
                       </div>
@@ -897,11 +1090,13 @@ function App() {
                             <strong>{money.format((order.deliveryFee ?? order.estimatedDeliveryFee)!)}</strong>
                           </div>
                         )}
+                        {order.deliveryDistanceKm !== null && <div><span>Kuş uçuşu mesafe</span><strong>{order.deliveryDistanceKm.toFixed(2)} km</strong></div>}
                         <div className="customer-order-total">
-                          <span>{order.amount === null ? "Tutar" : order.localNumber ? "Kesin tutar" : "Tahmini tutar"}</span>
+                          <span>{order.status === "FEE_CONFIRMATION" ? "Teklif edilen toplam" : order.amount === null ? "Tutar" : order.localNumber ? "Kesin tutar" : "Tahmini tutar"}</span>
                           <strong>{order.amount === null ? "Restoran belirleyecek" : money.format(order.amount)}</strong>
                         </div>
                       </div>
+                      {feeResponseControls(order)}
                       <section className="customer-order-payment">
                         <strong>Ödeme</strong>
                         {order.status === "PAID" ? (
@@ -920,8 +1115,8 @@ function App() {
                         <strong>Sipariş geçmişi</strong>
                         <div><span>Sipariş oluşturuldu</span><time>{new Date(order.createdAt).toLocaleString("tr-TR")}</time></div>
                         {(order.receivedAt || order.claimedAt) && <div><span>Restorana iletildi</span><time>{new Date(order.receivedAt ?? order.claimedAt!).toLocaleString("tr-TR")}</time></div>}
-                        {order.decidedAt && (order.status === "APPROVED" || order.status === "PAID" || order.status === "REJECTED") && (
-                          <div><span>{order.status === "REJECTED" ? "Sipariş reddedildi" : "Sipariş onaylandı"}</span><time>{new Date(order.decidedAt).toLocaleString("tr-TR")}</time></div>
+                        {order.decidedAt && (order.status === "APPROVED" || order.status === "PAID" || order.status === "REJECTED" || order.status === "FEE_ACCEPTED" || order.status === "FEE_CANCELLED") && (
+                          <div><span>{order.status === "REJECTED" || order.status === "FEE_CANCELLED" ? "Sipariş iptal edildi" : order.status === "FEE_ACCEPTED" ? "Ücret kabul edildi" : "Sipariş onaylandı"}</span><time>{new Date(order.decidedAt).toLocaleString("tr-TR")}</time></div>
                         )}
                         {order.status === "PAID" && order.paidAt && <div><span>Ödeme alındı</span><time>{new Date(order.paidAt).toLocaleString("tr-TR")}</time></div>}
                       </section>
@@ -930,6 +1125,7 @@ function App() {
                   ))}
                 </div>
               )}
+              {feeResponseMessage && <p className="profile-saved" role="status">{feeResponseMessage}</p>}
               {ordersError && <p className="inline-error" role="alert">{ordersError}</p>}
             </>
           ) : (
@@ -949,7 +1145,9 @@ function App() {
                   <span>
                     <strong>{restaurant.name}</strong>
                     <small className="restaurant-order-types">
-                      Eve teslimat · Yol ücreti {money.format(restaurant.deliveryFee)}{restaurant.dineInEnabled ? " · Masa QR" : ""}
+                      Eve teslimat · Yol ücreti {restaurant.deliveryPerKm === null
+                        ? money.format(restaurant.deliveryFee)
+                        : `${money.format(restaurant.deliveryPerKm)} / km`}{restaurant.dineInEnabled ? " · Masa QR" : ""}
                     </small>
                     <small>{[restaurant.address, restaurant.phone].filter(Boolean).join(" · ") || "Menüyü görüntüle · Eve sipariş ver"}</small>
                   </span>
@@ -1058,10 +1256,60 @@ function App() {
                   Telefon
                   <input type="tel" autoComplete="tel" maxLength={40} value={contactDraft.phone} onChange={(event) => { setProfileSaved(false); setContactDraft((current) => ({ ...current, phone: event.target.value })); }} placeholder="05xx xxx xx xx" />
                 </label>
-                <label className="field-label">
-                  Adres
-                  <textarea autoComplete="street-address" maxLength={300} value={contactDraft.address} onChange={(event) => { setProfileSaved(false); setContactDraft((current) => ({ ...current, address: event.target.value })); }} placeholder="İsteğe bağlı adres bilgisi" />
-                </label>
+                <section className="saved-addresses" aria-labelledby="saved-addresses-title">
+                  <div className="saved-addresses-heading">
+                    <div>
+                      <strong id="saved-addresses-title">Teslimat adreslerim</strong>
+                      <small>Adreslerinizi hesabınızda saklayın ve siparişte seçin.</small>
+                    </div>
+                    <span>{contactDraft.addresses.length}/{MAX_SAVED_ADDRESSES}</span>
+                  </div>
+                  {contactDraft.addresses.map((entry, index) => (
+                    <article className="saved-address-card" key={entry.id ?? `legacy-address-${index}`}>
+                      <div className="saved-address-card-heading">
+                        <strong>{entry.label || `Adres ${index + 1}`}</strong>
+                        <button type="button" className="text-button" onClick={() => removeContactAddress(index)}>Sil</button>
+                      </div>
+                      <label className="field-label">
+                        Adres etiketi
+                        <input
+                          type="text"
+                          maxLength={60}
+                          value={entry.label}
+                          onChange={(event) => updateContactAddress(index, { label: event.target.value })}
+                          placeholder="Ev, İş"
+                        />
+                      </label>
+                      <label className="field-label">
+                        Açık adres
+                        <textarea
+                          autoComplete="street-address"
+                          maxLength={300}
+                          value={entry.address}
+                          onChange={(event) => updateContactAddress(index, { address: event.target.value })}
+                          placeholder="Mahalle, cadde, bina ve daire bilgisi"
+                        />
+                      </label>
+                      <label className="default-address-choice">
+                        <input
+                          type="radio"
+                          name="default-delivery-address"
+                          checked={entry.isDefault}
+                          onChange={() => setDefaultContactAddress(index)}
+                        />
+                        Varsayılan adres
+                      </label>
+                    </article>
+                  ))}
+                  <button
+                    type="button"
+                    className="secondary-button add-address-button"
+                    disabled={contactDraft.addresses.length >= MAX_SAVED_ADDRESSES}
+                    onClick={addContactAddress}
+                  >
+                    + Adres ekle
+                  </button>
+                </section>
                 <label className="share-contact-check">
                   <input
                     type="checkbox"
@@ -1069,11 +1317,11 @@ function App() {
                     onChange={(event) => { setProfileSaved(false); setContactDraft((current) => ({ ...current, shareWithRestaurant: event.target.checked })); }}
                   />
                   <span>
-                    <strong>Ad, telefon ve adresimi siparişlerimde otomatik paylaş</strong>
+                    <strong>Ad, telefon ve seçtiğim adresi siparişlerimde otomatik paylaş</strong>
                     <small>Restoran siparişi onayladığında bu bilgilerle eşleşen müşteri kaydı güncellenir. Paylaşımı istediğiniz zaman kapatabilirsiniz.</small>
                   </span>
                 </label>
-                <p className="profile-privacy-copy">Bilgileriniz hesabınızda bulutta saklanır. Otomatik paylaşım açıksa her yeni siparişle restorana gönderilir. Paylaşımı kapatmanız, restoranda önceden kaydedilmiş bilgileri silmez.</p>
+                <p className="profile-privacy-copy">Adresleriniz hesabınızda bulutta saklanır. Sipariş sırasında yalnızca seçtiğiniz adres paylaşılır. Km bazlı yol ücretinde cihaz konumu her siparişte anlık kullanılır ve kaydedilmez. Restoranda daha önce kaydedilmiş bilgiler paylaşımı kapatınca silinmez.</p>
                 {(profileError || actionError) && <p className="inline-error" role="alert">{profileError || actionError}</p>}
                 {profileSaved && <p className="profile-saved" role="status">Bilgileriniz güvenli profilinize kaydedildi.</p>}
                 <div className="profile-actions">
@@ -1131,7 +1379,7 @@ function App() {
                         <strong>{order.restaurantName ?? menu.shop} · {order.orderType === "DELIVERY" ? "Eve teslimat" : `Masa ${order.tableName ?? "QR"}`}{order.localNumber ? ` · #${order.localNumber}` : ""}</strong>
                         <span>{new Date(order.createdAt).toLocaleString("tr-TR")}</span>
                       </div>
-                      <span className={`order-status ${order.status === "APPROVED" ? "is-approved" : order.status === "REJECTED" ? "is-rejected" : ""}`}>
+                      <span className={`order-status ${order.status === "APPROVED" || order.status === "FEE_ACCEPTED" ? "is-approved" : order.status === "REJECTED" || order.status === "FEE_CANCELLED" ? "is-rejected" : ""}`}>
                         {orderStatusLabel(order.status)}
                       </span>
                     </div>
@@ -1147,15 +1395,18 @@ function App() {
                       })}
                     </div>
                     <div className="customer-order-total">
-                      <span>{order.amount === null ? "Tutar" : order.localNumber ? "Kesin tutar" : "Tahmini tutar"}</span>
+                      <span>{order.status === "FEE_CONFIRMATION" ? "Teklif edilen toplam" : order.amount === null ? "Tutar" : order.localNumber ? "Kesin tutar" : "Tahmini tutar"}</span>
                       <strong>{order.amount === null ? "Restoran belirleyecek" : money.format(order.amount)}</strong>
                     </div>
+                    {order.deliveryDistanceKm !== null && <p className="muted-copy">Kuş uçuşu mesafe: {order.deliveryDistanceKm.toFixed(2)} km</p>}
+                    {feeResponseControls(order)}
                     {order.status === "REJECTED" && order.reason && <p className="order-reason">{order.reason}</p>}
                   </article>
                 ))}
               </div>
             </>
           )}
+          {feeResponseMessage && <p className="profile-saved" role="status">{feeResponseMessage}</p>}
           {ordersError && <p className="inline-error" role="alert">{ordersError}</p>}
         </main>
       ) : <main>
@@ -1164,7 +1415,11 @@ function App() {
             <div className="restaurant-contact">
               {menu.address && <span>{menu.address}</span>}
               {menu.phone && <a href={`tel:${menu.phone.replace(/[^\d+]/g, "")}`}>{menu.phone}</a>}
-              {menu.deliveryEnabled && <span>Yol ücreti: {money.format(menu.deliveryFee)}</span>}
+              {menu.deliveryEnabled && <span>
+                Yol ücreti: {menu.deliveryPerKm === null
+                  ? money.format(menu.deliveryFee)
+                  : `${money.format(menu.deliveryPerKm)} / km`}
+              </span>}
             </div>
           )}
           <div className="menu-heading">
@@ -1394,7 +1649,7 @@ function App() {
                       {profileLoading ? (
                         <span>Adres ve telefon bilgileriniz kontrol ediliyor…</span>
                       ) : deliveryProfileReady ? (
-                        <span>Teslimat adresiniz ve telefonunuz Bilgilerim’den alınacak.</span>
+                        <span>Teslimat adresi ve telefonunuz seçiminize göre Bilgilerim’den alınacak.</span>
                       ) : (
                         <>
                           <span>Eve teslimat için Bilgilerim’de adres ve telefon ekleyip otomatik paylaşımı açın.</span>
@@ -1403,17 +1658,38 @@ function App() {
                       )}
                     </div>
                   )}
+                  {!menu.isTableQr && deliveryProfileReady && contactProfile.addresses.length > 1 && (
+                    <label className="field-label delivery-address-select">
+                      Teslimat adresi
+                      <select value={selectedDeliveryAddressId} onChange={(event) => setSelectedDeliveryAddressId(event.target.value)}>
+                        {contactProfile.addresses.map((address, index) => (
+                          <option key={address.id ?? `legacy-address-${index}`} value={address.id ?? ""}>
+                            {address.label}: {address.address}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                   <label className="field-label">
                     Sipariş notu
                     <textarea maxLength={200} value={cartNote} onChange={(event) => setCartNote(event.target.value)} placeholder="Restorana iletmek istediğiniz bir not var mı?" />
                   </label>
-                  {!menu.isTableQr && <div className="total-row"><span>Yol ücreti</span><strong>{money.format(menu.deliveryFee)}</strong></div>}
-                  <div className="total-row"><span>{menu.isTableQr ? "Toplam" : "Tahmini toplam"}</span><strong>{money.format(menu.isTableQr ? total : deliveryTotal)}</strong></div>
-                  <p className="muted-copy">{menu.isTableQr ? "Masa siparişi restoran onayına gönderilir." : "Tahmini toplam varsayılan yol ücretini içerir. Restoran onay sırasında ücreti değiştirebilir; ödeme restoranda alınır."}</p>
+                  {!menu.isTableQr && <div className="total-row">
+                    <span>{activeDeliveryQuote ? `Yol ücreti (${activeDeliveryQuote.distanceKm.toFixed(2)} km)` : "Yol ücreti"}</span>
+                    <strong>{activeDeliveryQuote ? money.format(activeDeliveryQuote.fee) : menu.deliveryPerKm === null
+                      ? money.format(menu.deliveryFee)
+                      : `${money.format(menu.deliveryPerKm)} / km · konum alınca hesaplanır`}</strong>
+                  </div>}
+                  <div className="total-row"><span>{menu.isTableQr ? "Toplam" : activeDeliveryQuote || menu.deliveryPerKm === null ? "Tahmini toplam" : "Ürünler toplamı"}</span><strong>{money.format(menu.isTableQr ? total : deliveryTotal)}</strong></div>
+                  <p className="muted-copy">{menu.isTableQr
+                    ? "Masa siparişi restoran onayına gönderilir."
+                    : activeDeliveryQuote
+                      ? "Restoran ücreti kontrol eder. Ücret artarsa yeni tutar onayınıza sunulur; ödeme restoranda alınır."
+                      : "Teslimat ücreti her siparişte mevcut konumunuz ve restoran konumu arasındaki kuş uçuşu mesafeye göre hesaplanır."}</p>
                   {!authReady ? <p className="cart-auth-hint">Oturum kontrol ediliyor…</p> : authUser ? (
                     <div className="cart-auth-ready">
                       <button className="primary-button" disabled={busy || (!menu.isTableQr && !deliveryProfileReady)} onClick={() => requestOrder("google")}>
-                        {busy ? "İşleniyor…" : "Siparişi ver"}
+                        {busy ? "İşleniyor…" : !menu.isTableQr && menu.deliveryPerKm !== null && !activeDeliveryQuote ? "Yol ücretini hesapla" : "Siparişi ver"}
                       </button>
                     </div>
                   ) : (
@@ -1469,7 +1745,7 @@ function App() {
             <div className="dialog-scroll">
               <span className="dialog-kicker">MÜŞTERİ BİLGİLENDİRMESİ</span>
               <h2 id="data-notice-title">Sipariş ve müşteri kaydı</h2>
-              <p>Devam ettiğinizde Google veya Apple profil adınız siparişinizle restorana iletilir ve restoranın yerel müşteri kaydına eklenir. Bilgilerim bölümünde otomatik paylaşımı açarsanız telefon ve adresiniz her yeni siparişinizle gönderilir ve restoranın müşteri kaydı güncellenir.</p>
+              <p>Devam ettiğinizde Google veya Apple profil adınız siparişinizle restorana iletilir ve restoranın yerel müşteri kaydına eklenir. Eve teslimatta seçtiğiniz adres ve telefonunuz otomatik paylaşım açıksa restorana gönderilir. Cihaz konumunuz yalnızca yol ücretini hesaplamak için o sipariş isteği sırasında kullanılır; profilinize veya sipariş kaydınıza yazılmaz.</p>
               <label className="data-notice-check">
                 <input type="checkbox" checked={dataNoticeChecked} onChange={(event) => setDataNoticeChecked(event.target.checked)} />
                 <span>Bilgilendirmeyi okudum ve devam etmek istiyorum.</span>
