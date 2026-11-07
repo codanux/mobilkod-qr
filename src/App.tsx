@@ -240,6 +240,8 @@ function App() {
   const [pushError, setPushError] = useState("");
   const [addressLocationBusy, setAddressLocationBusy] = useState<number | null>(null);
   const [expandedAddressId, setExpandedAddressId] = useState<string | null>(null);
+  const [addressSavingId, setAddressSavingId] = useState<string | null>(null);
+  const [savedAddressId, setSavedAddressId] = useState<string | null>(null);
   const productDialogScroll = useRef<HTMLDivElement>(null);
   const auth = useMemo(() => getFirebaseAuth(), []);
   const orderType = menu?.isTableQr ? "DINE_IN" : "DELIVERY";
@@ -729,8 +731,102 @@ function App() {
     }
   }
 
+  async function saveContactAddress(index: number) {
+    if (!authUser || profileSaving || addressSavingId !== null) return;
+    const target = contactDraft.addresses[index];
+    if (!target) return;
+    const targetKey = target.id ?? `legacy-address-${index}`;
+    const label = target.label.trim();
+    const address = target.address.trim();
+    if (!label || !address) {
+      setActionError("Adresi kaydetmek için etiket ve açık adres girin.");
+      return;
+    }
+
+    const targetId = target.id ?? crypto.randomUUID();
+    const addresses: ContactAddress[] = [];
+    contactProfile.addresses.forEach((saved, savedIndex) => {
+      const draftIndex = contactDraft.addresses.findIndex((entry, entryIndex) =>
+        saved.id ? entry.id === saved.id : entry.id === null && entryIndex === savedIndex);
+      if (draftIndex === -1) return;
+      const draft = contactDraft.addresses[draftIndex];
+      const isTarget = draftIndex === index;
+      addresses.push({
+        id: isTarget ? targetId : saved.id ?? crypto.randomUUID(),
+        label: isTarget ? label : saved.label.trim(),
+        address: isTarget ? address : saved.address.trim(),
+        latitude: isTarget ? target.latitude ?? null : saved.latitude ?? null,
+        longitude: isTarget ? target.longitude ?? null : saved.longitude ?? null,
+        isDefault: isTarget ? target.isDefault : draft.isDefault,
+      });
+    });
+    if (!addresses.some((entry) => entry.id === targetId)) {
+      addresses.push({
+        id: targetId,
+        label,
+        address,
+        latitude: target.latitude ?? null,
+        longitude: target.longitude ?? null,
+        isDefault: target.isDefault,
+      });
+    }
+    if (addresses.length > MAX_SAVED_ADDRESSES) {
+      setActionError("En fazla 10 adres ekleyebilirsiniz.");
+      return;
+    }
+    if (addresses.length > 0 && !addresses.some((entry) => entry.isDefault)) {
+      const currentDefault = contactProfile.addresses.find((entry) => entry.isDefault);
+      const defaultId = currentDefault && addresses.some((entry) => entry.id === currentDefault.id)
+        ? currentDefault.id
+        : addresses[0].id;
+      for (const entry of addresses) entry.isDefault = entry.id === defaultId;
+    }
+    if (target.isDefault) {
+      for (const entry of addresses) entry.isDefault = entry.id === targetId;
+    }
+
+    const profile = {
+      ...contactProfile,
+      address: addresses.find((entry) => entry.isDefault)?.address ?? "",
+      addresses,
+    };
+    setAddressSavingId(targetKey);
+    setSavedAddressId(null);
+    setActionError("");
+    try {
+      const result = await customerRequest<{ profile: ContactProfile }>(authUser, "/m/profile/current", {
+        method: "PUT",
+        body: JSON.stringify(profile),
+      });
+      setContactProfile(result.profile);
+      setContactDraft((current) => ({
+        ...current,
+        address: result.profile.address,
+        addresses: current.addresses.map((entry, entryIndex) => {
+          const saved = result.profile.addresses.find((candidate) =>
+            candidate.id === (entry.id ?? (entryIndex === index ? targetId : null)));
+          if (!saved) return entry;
+          if (entryIndex === index) return saved;
+          const outgoing = addresses.find((candidate) => candidate.id === saved.id);
+          return { ...entry, id: saved.id, isDefault: outgoing?.isDefault ?? saved.isDefault };
+        }),
+      }));
+      const selectedId = readSelectedAddressId(authUser.uid);
+      selectDeliveryAddress(result.profile.addresses.some((entry) => entry.id === selectedId)
+        ? selectedId
+        : defaultAddressId(result.profile));
+      setActionError("");
+      setSavedAddressId(targetId);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Adres kaydedilemedi.");
+    } finally {
+      setAddressSavingId(null);
+    }
+  }
+
   function updateContactAddress(index: number, patch: Partial<ContactAddress>) {
     setProfileSaved(false);
+    setSavedAddressId(null);
     setContactDraft((current) => ({
       ...current,
       addresses: current.addresses.map((address, addressIndex) =>
@@ -757,6 +853,7 @@ function App() {
       isDefault: isFirst,
     };
     setProfileSaved(false);
+    setSavedAddressId(null);
     setContactDraft((current) => ({ ...current, addresses: [...current.addresses, address] }));
     setExpandedAddressId(address.id);
     if (isFirst) setSelectedDeliveryAddressId(address.id ?? "");
@@ -785,6 +882,7 @@ function App() {
       addresses[0] = { ...addresses[0], isDefault: true };
     }
     setProfileSaved(false);
+    setSavedAddressId(null);
     setContactDraft((current) => ({ ...current, addresses }));
     if (removed && expandedAddressId === (removed.id ?? `legacy-address-${index}`)) {
       setExpandedAddressId(null);
@@ -797,6 +895,7 @@ function App() {
   function setDefaultContactAddress(index: number) {
     const address = contactDraft.addresses[index];
     setProfileSaved(false);
+    setSavedAddressId(null);
     setContactDraft((current) => ({
       ...current,
       addresses: current.addresses.map((entry, addressIndex) => ({ ...entry, isDefault: addressIndex === index })),
@@ -1225,14 +1324,16 @@ function App() {
           {view === "addresses" ? (
             <AddressBookPage
               authReady={authReady} user={authUser} loading={profileLoading} saving={profileSaving}
-              saved={profileSaved} ordersError={ordersError} profileError={profileError} actionError={actionError}
+              ordersError={ordersError} profileError={profileError} actionError={actionError}
               addresses={contactDraft.addresses} expandedAddressId={expandedAddressId}
-              locationBusyIndex={addressLocationBusy} maxAddresses={MAX_SAVED_ADDRESSES}
+              locationBusyIndex={addressLocationBusy} savingAddressId={addressSavingId}
+              savedAddressId={savedAddressId} maxAddresses={MAX_SAVED_ADDRESSES}
               onBack={() => navigateView("profile")} onLogin={(provider) => void signInForOrders(provider)}
               onToggleAddress={(id) => setExpandedAddressId((current) => current === id ? null : id)}
               onUpdateAddress={updateContactAddress} onSaveLocation={(index) => void saveAddressLocation(index)}
+              onSaveAddress={(index) => void saveContactAddress(index)}
               onSetDefaultAddress={setDefaultContactAddress} onRemoveAddress={removeContactAddress}
-              onAddAddress={addContactAddress} onSave={() => void saveContactProfile()}
+              onAddAddress={addContactAddress}
             />
           ) : view === "profile" ? (
             <ProfilePage
@@ -1339,14 +1440,16 @@ function App() {
       {view === "addresses" ? (
         <AddressBookPage
           authReady={authReady} user={authUser} loading={profileLoading} saving={profileSaving}
-          saved={profileSaved} ordersError={ordersError} profileError={profileError} actionError={actionError}
+          ordersError={ordersError} profileError={profileError} actionError={actionError}
           addresses={contactDraft.addresses} expandedAddressId={expandedAddressId}
-          locationBusyIndex={addressLocationBusy} maxAddresses={MAX_SAVED_ADDRESSES}
+          locationBusyIndex={addressLocationBusy} savingAddressId={addressSavingId}
+          savedAddressId={savedAddressId} maxAddresses={MAX_SAVED_ADDRESSES}
           onBack={() => navigateView("profile")} onLogin={(provider) => void signInForOrders(provider)}
           onToggleAddress={(id) => setExpandedAddressId((current) => current === id ? null : id)}
           onUpdateAddress={updateContactAddress} onSaveLocation={(index) => void saveAddressLocation(index)}
+          onSaveAddress={(index) => void saveContactAddress(index)}
           onSetDefaultAddress={setDefaultContactAddress} onRemoveAddress={removeContactAddress}
-          onAddAddress={addContactAddress} onSave={() => void saveContactProfile()}
+          onAddAddress={addContactAddress}
         />
       ) : view === "profile" ? (
         <ProfilePage

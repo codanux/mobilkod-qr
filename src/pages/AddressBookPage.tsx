@@ -6,29 +6,31 @@ type Props = {
   user: User | null;
   loading: boolean;
   saving: boolean;
-  saved: boolean;
   ordersError: string;
   profileError: string;
   actionError: string;
   addresses: ContactAddress[];
   expandedAddressId: string | null;
   locationBusyIndex: number | null;
+  savingAddressId: string | null;
+  savedAddressId: string | null;
   maxAddresses: number;
   onBack: () => void;
   onLogin: (provider: "google" | "apple") => void;
   onToggleAddress: (id: string) => void;
   onUpdateAddress: (index: number, patch: Partial<ContactAddress>) => void;
   onSaveLocation: (index: number) => void;
+  onSaveAddress: (index: number) => void;
   onSetDefaultAddress: (index: number) => void;
   onRemoveAddress: (index: number) => void;
   onAddAddress: () => void;
-  onSave: () => void;
 };
 
 export function AddressBookPage({
-  authReady, user, loading, saving, saved, ordersError, profileError, actionError, addresses,
-  expandedAddressId, locationBusyIndex, maxAddresses, onBack, onLogin, onToggleAddress,
-  onUpdateAddress, onSaveLocation, onSetDefaultAddress, onRemoveAddress, onAddAddress, onSave,
+  authReady, user, loading, saving, ordersError, profileError, actionError, addresses,
+  expandedAddressId, locationBusyIndex, savingAddressId, savedAddressId, maxAddresses,
+  onBack, onLogin, onToggleAddress, onUpdateAddress, onSaveLocation, onSaveAddress,
+  onSetDefaultAddress, onRemoveAddress, onAddAddress,
 }: Props) {
   return (
     <main className="profile-page">
@@ -82,29 +84,33 @@ export function AddressBookPage({
                       </button>
                       <div className="saved-address-actions">
                         <button type="button" className="text-button edit-address-button"
+                          disabled={savingAddressId !== null}
                           aria-label={`${entry.label || `Adres ${index + 1}`} adresini ${expanded ? "kapat" : "düzenle"}`}
                           onClick={() => onToggleAddress(id)}>
                           {expanded ? "Kapat" : "Düzenle"}
                         </button>
-                        <button type="button" className="text-button" onClick={() => onRemoveAddress(index)}>Sil</button>
+                        <button type="button" className="text-button" disabled={savingAddressId !== null}
+                          onClick={() => onRemoveAddress(index)}>Sil</button>
                       </div>
                     </div>
                     {expanded && <div className="saved-address-fields">
                       <label className="field-label">
                         Adres etiketi
-                        <input type="text" maxLength={60} value={entry.label}
+                        <input type="text" maxLength={60} value={entry.label} disabled={savingAddressId !== null}
                           onChange={(event) => onUpdateAddress(index, { label: event.target.value })}
                           placeholder="Ev, İş" />
                       </label>
                       <label className="field-label">
                         Açık adres
                         <textarea autoComplete="street-address" maxLength={300} value={entry.address}
+                          disabled={savingAddressId !== null}
                           onChange={(event) => onUpdateAddress(index, { address: event.target.value })}
                           placeholder="Mahalle, cadde, bina ve daire bilgisi" />
                       </label>
                       <div className="address-location-settings">
                         <button type="button" className="secondary-button"
-                          disabled={locationBusyIndex !== null || saving} onClick={() => onSaveLocation(index)}>
+                          disabled={locationBusyIndex !== null || saving || savingAddressId !== null}
+                          onClick={() => onSaveLocation(index)}>
                           {locationBusyIndex === index ? "Konum alınıyor…" : hasLocation ? "Konumu güncelle" : "Bu adresin konumunu kaydet"}
                         </button>
                         <small>{hasLocation
@@ -113,25 +119,28 @@ export function AddressBookPage({
                       </div>
                       <label className="default-address-choice">
                         <input type="radio" name="default-delivery-address" checked={entry.isDefault}
+                          disabled={savingAddressId !== null}
                           onChange={() => onSetDefaultAddress(index)} />
                         Varsayılan adres
                       </label>
+                      <div className="saved-address-save-actions">
+                        <button type="button" className="primary-button"
+                          disabled={saving || savingAddressId !== null || locationBusyIndex !== null}
+                          onClick={() => onSaveAddress(index)}>
+                          {savingAddressId === id ? "Kaydediliyor…" : savedAddressId === id ? "Kaydedildi" : "Bu adresi kaydet"}
+                        </button>
+                      </div>
                     </div>}
                   </article>
                 );
               })}
               <button type="button" className="secondary-button add-address-button"
-                disabled={addresses.length >= maxAddresses || saving} onClick={onAddAddress}>
+                disabled={addresses.length >= maxAddresses || saving || savingAddressId !== null}
+                onClick={onAddAddress}>
                 + Adres ekle
               </button>
             </section>
             {(profileError || actionError) && <p className="inline-error" role="alert">{profileError || actionError}</p>}
-            {saved && <p className="profile-saved" role="status">Adresleriniz kaydedildi.</p>}
-            <div className="profile-actions">
-              <button className="primary-button" disabled={saving} onClick={onSave}>
-                {saving ? "Kaydediliyor…" : "Adresleri kaydet"}
-              </button>
-            </div>
           </>
         )}
       </section>
