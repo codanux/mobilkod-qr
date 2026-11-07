@@ -1,37 +1,177 @@
-# Mobilkod QR Menu
+# Mobilkod QR Menü
 
-Standalone React frontend for restaurant QR menus. POS Cloud remains
-responsible for serving menu data, verifying Firebase sign-in, accepting
-orders, and reporting order status.
+POS Cloud tarafından sağlanan menü ve QR sipariş akışının statik React
+istemcisi. Bu repoda sipariş veritabanı veya Cloud API bulunmaz; backend
+değişiklikleri [POS Cloud](../pos-cloud/README.md) projesinde yapılır.
 
-## Development
+## İçindekiler
 
-1. Copy `.env.example` to `.env.local`.
-2. Run `npm install`.
-3. Run `npm run dev`.
-4. Open `http://localhost:5173/<table-token>`.
+- [Mimari ve kullanıcı yolları](#mimari-ve-kullanıcı-yolları)
+- [Geliştirme](#geliştirme)
+- [Yayın](#yayın)
+- [Cloud API sözleşmesi](#cloud-api-sözleşmesi)
+- [İş kuralları ve gizlilik](#iş-kuralları-ve-gizlilik)
+- [AI agent ve katkı notları](#ai-agent-ve-katkı-notları)
 
-The Vite development proxy forwards `/m/*` requests to `http://localhost:4000`.
-Set `QR_API_PROXY_TARGET` if the local POS Cloud API uses a different address.
+## Mimari ve kullanıcı yolları
 
-## Production (`qr.mobilkod.com`)
+| Sorumluluk | Uygulama |
+|---|---|
+| UI, sepet, Firebase Google/Apple oturumu | `src/App.tsx` |
+| Stil ve responsive düzen | `src/App.css` |
+| API origin | `VITE_API_BASE_URL`; boşsa göreli `/m` istekleri |
+| Geliştirme proxy | `vite.config.ts`; `/m/*` → `QR_API_PROXY_TARGET` |
+| Menü, auth token doğrulama, sipariş kaydı | POS Cloud `src/qr/` |
+| POS'a aktarma ve personel onayı | Mobilkod POS `server/src/cloud/` |
 
-The production build uses `https://pos.mobilkod.com` as its API base URL from
-`.env.production`. Run `npm run build` and host the generated `dist/` directory
-on `qr.mobilkod.com`, with HTTPS and SPA fallback to `index.html` for paths
-such as `/<table-token>`.
+- Masada sipariş: `/<tableToken>` → `GET /m/:tableToken/menu`.
+- Restoran dizini/teslimat menüsü: `/` → `/restaurant/:tenantId` →
+  `GET /m/restaurants/:tenantId/menu`.
+- Menü yolu sonuna `/orders` veya `/profile` eklenerek sipariş geçmişi ve
+  profil açılır. `/orders` dizin kökünde giriş yapmış kullanıcının restoranlar
+  arası geçmişidir.
+- Eve teslimat siparişi için profil bilgileri ve açıkça etkinleştirilmiş
+  otomatik paylaşım gerekir. Online ödeme bu uygulamanın kapsamı dışındadır.
 
-Set `QR_MENU_URL=https://qr.mobilkod.com` in the POS Cloud production
-environment and restart/redeploy POS Cloud. This makes new table QR links point
-to the React app and redirects old `/m/<token>` links there. POS Cloud enables
-CORS for the configured QR menu origin only.
+## Geliştirme
 
-Add `qr.mobilkod.com` to Firebase Authentication's authorized domains. The
-frontend is a static site; keep Firebase credentials in the menu API response
-and never put server secrets in Vite environment variables.
+Gereksinimler: Node.js ve npm.
 
-Orders are sent to the restaurant for approval; this frontend does not process
-online payments. Customers can open **Siparişlerim** on the same table QR link
-to see their order status, estimated total, and the final total after POS
-approval. The order list requires the same Google or Apple account used to
-place the orders.
+```sh
+npm install
+cp .env.example .env.local
+npm run dev
+```
+
+`.env.local` içindeki `VITE_API_BASE_URL` boşsa Vite göreli `/m` isteklerini
+kullanır; `QR_API_PROXY_TARGET` varsayılanı `http://localhost:4000`'dır.
+Geliştirme sunucusu açılışı `http://localhost:5173/`; masa akışı için
+`http://localhost:5173/<tableToken>` kullanın. POS Cloud API'si ve geçerli
+menü snapshot'ı çalışır durumda olmalıdır.
+
+```sh
+npm run lint
+npm run build
+npm run preview
+```
+
+## Yayın
+
+Cloudflare Pages build ayarları:
+
+| Ayar | Değer |
+|---|---|
+| Build command | `npm run build` |
+| Build output directory | `dist` |
+| Root directory | QR Menu proje kökü |
+
+Build komutu `vite build --mode production` çalıştırır ve repodaki
+`.env.production` dosyasından `VITE_API_BASE_URL` değerini alır (yayınlanan API
+origin'i, `https://pos.mobilkod.com`). Bu değer frontend bundle'ına gömülür;
+API origin'ini değiştirmek için `.env.production` güncellenip Pages yeniden
+deploy edilmelidir. `.env.production` production endpoint dışında secret
+içermemelidir. `dist/` içeriği HTTPS ve SPA fallback ile `/`, `/<tableToken>`,
+`/restaurant/:tenantId`, `/orders` ve `/profile` yolları `index.html`'e
+gitmelidir.
+
+POS Cloud'da `QR_MENU_URL=https://qr.mobilkod.com` ayarlayın. Cloud bu origin'e
+CORS izni verir ve masa QR linklerini frontend'e yönlendirir. Firebase
+Authentication'da Google/Apple sağlayıcılarını ve `qr.mobilkod.com` authorized
+domain'ini etkinleştirin. Firebase web config'i
+[`src/firebase-config.ts`](src/firebase-config.ts) içinde build'e gömülür;
+değişiklik sonrası QR Menu yeniden build/deploy edilmelidir. Web API key ve
+VAPID public key istemciye açık değerlerdir. Firebase Admin service-account
+JSON'u veya private key bu projeye kesinlikle kopyalanmamalıdır.
+
+## Cloud API sözleşmesi
+
+Tüm istekler JSON kullanır. `request()` başarısız HTTP yanıtında JSON `message`
+alanını `Error` olarak yükseltir. Public menü/dizin dışında profil, sipariş,
+geçmiş ve sipariş durumu isteklerinde header:
+`Authorization: Bearer <Firebase-ID-token>`.
+Token Google veya Apple üzerinden Firebase Authentication'dan alınır.
+
+| Method ve path | Auth | İstek / yanıt |
+|---|---|---|
+| `GET /m/restaurants` | Public | `{restaurants}`; yalnız QR ve teslimata açık, menüsü yayınlanmış restoranlar |
+| `GET /m/:tableToken/menu` | Public | Restoran/masa bilgisi, `categories` ve QR/teslimat ayarları |
+| `GET /m/restaurants/:tenantId/menu` | Public | Aynı menu response; `table:null`, `isTableQr:false` |
+| `GET /m/profile/current` | Firebase Bearer | `{profile:null}` veya `{profile:{name,phone,address,shareWithRestaurant}}` |
+| `PUT /m/profile/current` | Firebase Bearer | Gönderilen profil alanlarını kaydeder, `{profile}` döner |
+| `PUT /m/notifications/token` | Firebase Bearer | Push izni verilen tarayıcının FCM token'ını hesaba bağlar |
+| `DELETE /m/notifications/token` | Firebase Bearer | Gövdedeki `{token}` kaydını bu hesaptan kaldırır |
+| `POST /m/:tableToken/orders` | Firebase Bearer | Masaya `DINE_IN` siparişi; `{id}` |
+| `POST /m/restaurants/:tenantId/orders` | Firebase Bearer | Teslimata `DELIVERY` siparişi; `{id}` |
+| `GET /m/:tableToken/orders?sessionId=<uuid>` | Firebase Bearer | `{orders,sessionEnded}`; aynı kullanıcı/masa oturumu |
+| `GET /m/restaurants/:tenantId/orders?sessionId=<uuid>` | Firebase Bearer | `{orders,sessionEnded}`; restoran teslimat oturumu |
+| `GET /m/:tableToken/orders/:id?sessionId=<uuid>` | Firebase Bearer | `{status,number,reason}` |
+| `GET /m/account/history/orders` | Firebase Bearer | Hesap sahibinin son 100 restoranlar arası QR siparişi |
+
+Sipariş request body:
+
+```json
+{
+  "sessionId": "UUID",
+  "orderType": "DINE_IN",
+  "note": "Opsiyonel sipariş notu",
+  "shareContactDetails": false,
+  "items": [{
+    "productId": "UUID",
+    "quantity": 1,
+    "note": "Opsiyonel kalem notu",
+    "modifierIds": ["UUID"],
+    "menuOptionIds": ["UUID"]
+  }]
+}
+```
+
+`orderType` masada `DINE_IN`, restoran menüsünde `DELIVERY` olmalıdır.
+`items` 1–40 satır, her `quantity` 1–20 aralığındadır; `sessionId` UUID'dir.
+İstemci fiyat/ara toplam göndermez. Cloud menü snapshot'ından tahmini tutarı
+hesaplar, POS kasası onay sırasında kendi veritabanından fiyatı tekrar hesaplar.
+`id` UUID alanı tekrar gönderimi idempotent yapmak için opsiyoneldir.
+
+Profil PUT gövdesi:
+`{"name":"…","phone":"…","address":"…","shareWithRestaurant":false}`.
+Telefon/adres profil sahibine aittir; restorana yalnız `shareWithRestaurant`
+açık ve sipariş gönderim koşulları sağlanmışsa paylaşılır.
+
+Cloud istek sınırları daima geçerlidir; masada 3 bekleyen sipariş sınırı ve
+IP/tenant rate limit aşılınca 429, engellenmiş müşteri 403, gerekli Firebase
+token yoksa 401 döner. Endpoint'in ayrıntılı server şeması ve error response
+kuralları [POS Cloud API referansında](../pos-cloud/README.md#qr-menü-apisi).
+
+## İş kuralları ve gizlilik
+
+- Restoran dizininde yalnız teslimat açılmış işletmeler listelenir; masa QR
+  bağlantısı doğrudan masaya gider ve teslimat seçeneği sunmaz.
+- İstemcide görülen tutar tahmindir. Ürün fiyatı, seçenek fiyatı, indirim,
+  teslimat ücreti ve kesin toplam POS tarafından onayda belirlenir.
+- Sipariş önce Cloud'da `PENDING` olur; kasaya aktarılır, personel onaylar veya
+  reddeder. Onay gerçek POS adisyonu oluşturur; müşteri geçmişi Cloud'dan
+  durum ve son tutarı alır.
+- Müşteri sipariş geçmişinden tarayıcı bildirimini ayrıca açabilir. Cloud,
+  sipariş onay/iptal/ödeme durumunda FCM bildirimi gönderir; teslimat ücreti
+  değiştiyse eski ve yeni ücreti ve kesin toplamı bildirir. Push için HTTPS,
+  Firebase Messaging Sender ID, Web Push VAPID public key ve Cloud'da Firebase
+  Admin service-account credential gerekir.
+- Profil ve sipariş geçmişi Firebase UID'ye bağlıdır. Kullanıcı farklı
+  cihazlarda aynı Firebase hesabıyla giriş yaparsa geçmişine erişebilir.
+- Menüdeki restaurant address/phone/delivery fee POS/Cloud ayarlarından gelir;
+  frontend bunları değiştirmez. Teslimat bölgesi/minimum sepet tutarı burada
+  tanımlı değildir.
+
+## AI agent ve katkı notları
+
+- Önce [AGENTS.md](AGENTS.md)'yi okuyun. Bu repo yalnız frontend'dir; `/m`
+  endpoint sözleşmesini veya veritabanını frontend içinde taklit etmeyin.
+- API alanlarını değiştirirken POS Cloud'daki QR controller ve servis
+  doğrulamasıyla, ayrıca bu README'deki request/response tablosuyla birlikte
+  güncelleyin.
+- Yeni route eklenirse Vite/hosting SPA fallback'ini ve `getTableToken`,
+  `getRestaurantId`, `getMenuPath` URL çözümlemesini kontrol edin.
+- API/client'tan dönen hata mesajlarını kullanıcıya görünür tutun; sessiz boş
+  menü veya sahte başarılı sipariş üretmeyin.
+- Doğrulama: `npm run lint` ve `npm run build`. Firebase popup, CORS ve gerçek
+  sipariş uçtan uca doğrulaması için çalışan Cloud API ve Firebase sağlayıcı
+  yapılandırması gerekir.
