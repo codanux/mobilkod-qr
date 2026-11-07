@@ -29,9 +29,14 @@ function load(): Session | null {
 
 let session: Session | null = load();
 let pending: Promise<string> | null = null;
+// Başarısız oturum denemesi kısa süre hatırlanır: yoklama/effect döngüleri sunucuyu dövmesin.
+let failure: { error: Error; until: number } | null = null;
+const FAILURE_BACKOFF_MS = 30_000;
+const RATE_LIMIT_BACKOFF_MS = 120_000;
 
 export function clearSession() {
   session = null;
+  failure = null;
   try { localStorage.removeItem(STORAGE_KEY); } catch { /* bellekte temizlendi */ }
 }
 
@@ -51,21 +56,30 @@ export function getAccessToken(user: User, force = false): Promise<string> {
   if (!force && session && session.uid === user.uid && session.expiresAt - Date.now() > MARGIN_MS) {
     return Promise.resolve(session.accessToken);
   }
-  pending ??= exchange(user).finally(() => { pending = null; });
+  if (failure && failure.until > Date.now()) return Promise.reject(failure.error);
+  pending ??= exchange(user)
+    .catch((error: Error & { status?: number }) => {
+      failure = { error, until: Date.now() + (error.status === 429 ? RATE_LIMIT_BACKOFF_MS : FAILURE_BACKOFF_MS) };
+      throw error;
+    })
+    .finally(() => { pending = null; });
   return pending;
 }
 
 /** Müşteri uçları için istek: sunucu token'ı ile gider; 401'de oturumu bir kez yenileyip tekrar dener. */
 export async function customerRequest<T>(user: User, path: string, init?: RequestInit): Promise<T> {
-  const send = async (force: boolean) => request<T>(path, {
+  const send = (token: string) => request<T>(path, {
     ...init,
-    headers: { ...init?.headers, authorization: `Bearer ${await getAccessToken(user, force)}` },
+    headers: { ...init?.headers, authorization: `Bearer ${token}` },
   });
+  // Oturum alınamazsa (ör. giriş reddedildi) hata aynen yukarı çıkar; ikinci deneme yapılmaz.
+  const token = await getAccessToken(user);
   try {
-    return await send(false);
+    return await send(token);
   } catch (error) {
     if ((error as { status?: number }).status !== 401) throw error;
+    // Yalnızca API 401 verdiyse (token süresi doldu) oturum bir kez yenilenir.
     clearSession();
-    return send(true);
+    return send(await getAccessToken(user, true));
   }
 }
