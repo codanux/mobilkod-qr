@@ -88,6 +88,14 @@ function defaultAddressId(profile: ContactProfile) {
     ?? "";
 }
 
+function selectedAddressStorageKey(uid: string) {
+  return `qr-selected-delivery-address:v1:${uid}`;
+}
+
+function readSelectedAddressId(uid: string) {
+  return localStorage.getItem(selectedAddressStorageKey(uid)) ?? "";
+}
+
 function contactProfileFromServer(profile: Partial<ContactProfile>): ContactProfile {
   const address = typeof profile.address === "string" ? profile.address : "";
   const addresses = profile.addresses ?? (address.trim()
@@ -156,12 +164,19 @@ function getRestaurantId() {
 
 function getMenuPath() {
   const parts = window.location.pathname.split("/").filter(Boolean);
+  if (parts.at(-2) === "orders") parts.pop();
   if (parts.at(-1) === "orders" || parts.at(-1) === "profile") parts.pop();
   return `/${parts.join("/")}`;
 }
 
+function getOrderDetailId() {
+  const parts = window.location.pathname.split("/").filter(Boolean);
+  const orderIndex = parts.lastIndexOf("orders");
+  return orderIndex >= 0 && orderIndex === parts.length - 2 ? parts.at(-1) ?? null : null;
+}
+
 function isOrdersPath() {
-  return window.location.pathname.split("/").filter(Boolean).at(-1) === "orders";
+  return window.location.pathname.split("/").filter(Boolean).at(-1) === "orders" || getOrderDetailId() !== null;
 }
 
 function isProfilePath() {
@@ -273,6 +288,7 @@ function App() {
   const [lineNoteDraft, setLineNoteDraft] = useState("");
   const [orderSent, setOrderSent] = useState(false);
   const [view, setView] = useState<"menu" | "orders" | "profile">(() => isOrdersPath() ? "orders" : isProfilePath() ? "profile" : "menu");
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(() => getOrderDetailId());
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [dataNoticeOpen, setDataNoticeOpen] = useState(false);
@@ -381,7 +397,33 @@ function App() {
       : next === "profile" ? `${menuPath}/profile` : menuPath;
     if (window.location.pathname !== target) window.history.pushState({}, "", target);
     if (next === "profile") setContactDraft(contactProfile);
+    setSelectedOrderId(null);
     setView(next);
+  }
+
+  function navigateOrderDetail(orderId: string) {
+    const target = menuApiPath
+      ? `${getMenuPath()}/orders/${encodeURIComponent(orderId)}`
+      : `/orders/${encodeURIComponent(orderId)}`;
+    if (window.location.pathname !== target) window.history.pushState({}, "", target);
+    setSelectedOrderId(orderId);
+    setView("orders");
+    window.scrollTo(0, 0);
+  }
+
+  function openOrdersList() {
+    navigateView("orders");
+    window.scrollTo(0, 0);
+  }
+
+  function selectDeliveryAddress(addressId: string) {
+    setSelectedDeliveryAddressId(addressId);
+    if (!authUser) return;
+    try {
+      localStorage.setItem(selectedAddressStorageKey(authUser.uid), addressId);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Seçilen adres bu cihazda saklanamadı.");
+    }
   }
 
   useEffect(() => {
@@ -433,10 +475,11 @@ function App() {
           const savedProfile = contactProfileFromServer(profile);
           setContactProfile(savedProfile);
           setContactDraft(savedProfile);
-          setSelectedDeliveryAddressId((current) =>
-            savedProfile.addresses.some((address) => address.id === current)
-              ? current
-              : defaultAddressId(savedProfile));
+          const savedSelection = readSelectedAddressId(authUser.uid);
+          const nextAddressId = savedProfile.addresses.some((address) => address.id === savedSelection)
+            ? savedSelection
+            : defaultAddressId(savedProfile);
+          setSelectedDeliveryAddressId(nextAddressId);
         } else {
           setContactProfile(emptyContactProfile());
           setContactDraft((current) => ({ ...current, name: current.name || authUser.displayName?.trim() || "" }));
@@ -454,7 +497,10 @@ function App() {
   }, [authUser, menu, menuApiPath]);
 
   useEffect(() => {
-    const onPopState = () => setView(isOrdersPath() ? "orders" : isProfilePath() ? "profile" : "menu");
+    const onPopState = () => {
+      setSelectedOrderId(getOrderDetailId());
+      setView(isOrdersPath() ? "orders" : isProfilePath() ? "profile" : "menu");
+    };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
@@ -553,6 +599,7 @@ function App() {
   }, [authUser, view]);
 
   const categories = menu?.categories ?? [];
+  const selectedOrder = orders.find((order) => order.id === selectedOrderId) ?? null;
   const visibleCategories = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("tr");
     return categories
@@ -687,7 +734,7 @@ function App() {
   }
 
   async function saveContactProfile() {
-    if (!menu || !authUser) return;
+    if (!authUser) return;
     const addresses = contactDraft.addresses.map((entry) => ({
       id: entry.id ?? crypto.randomUUID(),
       label: entry.label.trim(),
@@ -724,14 +771,20 @@ function App() {
       });
       setContactProfile(result.profile);
       setContactDraft(result.profile);
-      setSelectedDeliveryAddressId(defaultAddressId(result.profile));
+      const savedSelection = readSelectedAddressId(authUser.uid);
+      const nextAddressId = result.profile.addresses.some((address) => address.id === savedSelection)
+        ? savedSelection
+        : defaultAddressId(result.profile);
+      selectDeliveryAddress(nextAddressId);
       setActionError("");
       setProfileError("");
       setProfileSaved(true);
-      try {
-        localStorage.removeItem(contactProfileKey(menu));
-      } catch {
-        setProfileError("Bulut profili kaydedildi; bu cihazdaki eski taslak silinemedi.");
+      if (menu) {
+        try {
+          localStorage.removeItem(contactProfileKey(menu));
+        } catch {
+          setProfileError("Bulut profili kaydedildi; bu cihazdaki eski taslak silinemedi.");
+        }
       }
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Profil buluta kaydedilemedi.");
@@ -801,7 +854,7 @@ function App() {
       setExpandedAddressId(null);
     }
     if (removed && (removed.id ?? "") === selectedDeliveryAddressId) {
-      setSelectedDeliveryAddressId(defaultAddressId({ ...contactDraft, addresses }));
+      selectDeliveryAddress(defaultAddressId({ ...contactDraft, addresses }));
     }
   }
 
@@ -812,7 +865,7 @@ function App() {
       ...current,
       addresses: current.addresses.map((entry, addressIndex) => ({ ...entry, isDefault: addressIndex === index })),
     }));
-    if (address) setSelectedDeliveryAddressId(address.id ?? "");
+    if (address) selectDeliveryAddress(address.id ?? "");
   }
 
   function openLineNote(line: CartLine) {
@@ -1073,6 +1126,107 @@ function App() {
     return { name: item.productName ?? product?.name ?? "Ürün", choices: item.choiceNames ?? choices };
   }
 
+  function renderOrderSummary(order: CustomerOrder, fallbackRestaurantName: string) {
+    const itemNames = order.items.slice(0, 2).map((item) => `${item.quantity}× ${orderItemDetails(item).name}`);
+    return (
+      <button className="customer-order-summary" key={order.id} onClick={() => navigateOrderDetail(order.id)}>
+        <span className="customer-order-summary-main">
+          <strong>{order.restaurantName ?? fallbackRestaurantName}</strong>
+          <small>{order.orderType === "DELIVERY" ? "Eve teslimat" : `Masa ${order.tableName ?? "QR"}`}{order.localNumber ? ` · #${order.localNumber}` : ""} · {new Date(order.createdAt).toLocaleDateString("tr-TR")}</small>
+          <span>{itemNames.join(" · ")}{order.items.length > 2 ? ` · +${order.items.length - 2} ürün` : ""}</span>
+        </span>
+        <span className={`order-status ${order.status === "APPROVED" || order.status === "FEE_ACCEPTED" || order.status === "PAID" ? "is-approved" : order.status === "REJECTED" || order.status === "FEE_CANCELLED" ? "is-rejected" : ""}`}>
+          {orderStatusLabel(order.status)}
+        </span>
+        <span className="customer-order-summary-total">
+          <small>{order.status === "FEE_CONFIRMATION" ? "Yeni tutar" : order.amount === null ? "Tutar bekleniyor" : "Toplam"}</small>
+          <strong>{order.amount === null ? "—" : money.format(order.amount)}</strong>
+        </span>
+        <span className="customer-order-summary-arrow" aria-hidden="true">›</span>
+      </button>
+    );
+  }
+
+  function renderOrderDetails(order: CustomerOrder, fallbackRestaurantName: string) {
+    return (
+      <div className="order-detail-view">
+        <button className="order-back-button" onClick={openOrdersList}>← Siparişlerim</button>
+        <div className="orders-heading">
+          <span className="eyebrow">SİPARİŞ DETAYI</span>
+          <h1>{order.restaurantName ?? fallbackRestaurantName}</h1>
+          <p>{order.orderType === "DELIVERY" ? "Eve teslimat" : `Masa ${order.tableName ?? "QR"}`}{order.localNumber ? ` · #${order.localNumber}` : ""} · {new Date(order.createdAt).toLocaleString("tr-TR")}</p>
+        </div>
+        <article className="customer-order order-detail-card">
+          <div className="customer-order-heading">
+            <strong>Sipariş durumu</strong>
+            <span className={`order-status ${order.status === "APPROVED" || order.status === "FEE_ACCEPTED" || order.status === "PAID" ? "is-approved" : order.status === "REJECTED" || order.status === "FEE_CANCELLED" ? "is-rejected" : ""}`}>
+              {orderStatusLabel(order.status)}
+            </span>
+          </div>
+          <section className="customer-order-items">
+            {order.items.map((item, index) => {
+              const details = orderItemDetails(item);
+              return (
+                <div className="customer-order-item" key={`${order.id}-${index}`}>
+                  <div>
+                    <p>{item.quantity}× {details.name}{item.note ? ` · ${item.note}` : ""}</p>
+                    {details.choices.map((choice) => <span key={choice}>{choice}</span>)}
+                  </div>
+                  {typeof item.unitPrice === "number" && <strong>{money.format(item.unitPrice * item.quantity)}</strong>}
+                </div>
+              );
+            })}
+          </section>
+          <div className="customer-order-breakdown">
+            {order.subtotal !== null && <div><span>Ara toplam</span><strong>{money.format(order.subtotal)}</strong></div>}
+            {(order.discount ?? 0) > 0 && <div><span>İndirim</span><strong>−{money.format(order.discount!)}</strong></div>}
+            {(order.deliveryFee ?? order.estimatedDeliveryFee) !== null && (order.deliveryFee ?? order.estimatedDeliveryFee)! > 0 && (
+              <div>
+                <span>{order.deliveryFee === null ? "Tahmini teslimat ücreti" : "Teslimat ücreti"}</span>
+                <strong>{money.format((order.deliveryFee ?? order.estimatedDeliveryFee)!)}</strong>
+              </div>
+            )}
+            {order.deliveryDistanceKm !== null && <div><span>Kuş uçuşu mesafe</span><strong>{order.deliveryDistanceKm.toFixed(2)} km</strong></div>}
+            <div className="customer-order-total">
+              <span>{order.status === "FEE_CONFIRMATION" ? "Teklif edilen toplam" : order.amount === null ? "Tutar" : order.localNumber ? "Kesin tutar" : "Tahmini tutar"}</span>
+              <strong>{order.amount === null ? "Restoran belirleyecek" : money.format(order.amount)}</strong>
+            </div>
+          </div>
+          {feeResponseControls(order)}
+          <section className="customer-order-payment">
+            <strong>Ödeme</strong>
+            {order.status === "PAID" ? (
+              <>
+                <span>Ödeme restoranda alındı</span>
+                {order.paymentDetails?.length ? order.paymentDetails.map((payment, index) => (
+                  <div key={`${order.id}-payment-${index}`}>
+                    <span>{paymentMethodLabel(payment.method)}{payment.provider ? ` · ${payment.provider}` : ""}</span>
+                    <strong>{money.format(payment.amount)}</strong>
+                  </div>
+                )) : <span>Ödeme yöntemi bilgisi bulunmuyor.</span>}
+              </>
+            ) : <span>Ödeme, sipariş tesliminde restoranda alınır.</span>}
+          </section>
+          <section className="customer-order-timeline">
+            <strong>Sipariş geçmişi</strong>
+            <div><span>Sipariş oluşturuldu</span><time>{new Date(order.createdAt).toLocaleString("tr-TR")}</time></div>
+            {(order.receivedAt || order.claimedAt) && <div><span>Restorana iletildi</span><time>{new Date(order.receivedAt ?? order.claimedAt!).toLocaleString("tr-TR")}</time></div>}
+            {order.decidedAt && (order.status === "APPROVED" || order.status === "PAID" || order.status === "REJECTED" || order.status === "FEE_ACCEPTED" || order.status === "FEE_CANCELLED") && (
+              <div><span>{order.status === "REJECTED" || order.status === "FEE_CANCELLED" ? "Sipariş iptal edildi" : order.status === "FEE_ACCEPTED" ? "Ücret kabul edildi" : "Sipariş onaylandı"}</span><time>{new Date(order.decidedAt).toLocaleString("tr-TR")}</time></div>
+            )}
+            {order.status === "PAID" && order.paidAt && <div><span>Ödeme alındı</span><time>{new Date(order.paidAt).toLocaleString("tr-TR")}</time></div>}
+          </section>
+          {order.status === "REJECTED" && order.reason && <p className="order-reason">{order.reason}</p>}
+        </article>
+        {(feeResponseMessage || ordersError) && (
+          <p className={feeResponseMessage ? "profile-saved" : "inline-error"} role={feeResponseMessage ? "status" : "alert"}>
+            {feeResponseMessage || ordersError}
+          </p>
+        )}
+      </div>
+    );
+  }
+
   if (loadError) {
     return (
       <main className="state-page">
@@ -1095,17 +1249,50 @@ function App() {
           </a>
           <div className="topbar-actions">
             {view === "orders" && <button className="orders-link" onClick={() => navigateView("menu")}>Restoranlar</button>}
+            {view === "menu" && (authUser && contactProfile.addresses.length > 0 ? (
+              <label className="directory-address-picker">
+                <span>TESLİMAT ADRESİ</span>
+                <select
+                  aria-label="Yakınlığı hesaplanacak teslimat adresi"
+                  value={selectedDeliveryAddressId}
+                  onChange={(event) => selectDeliveryAddress(event.target.value)}
+                  disabled={profileLoading}
+                >
+                  {contactProfile.addresses.map((address, index) => (
+                    <option key={address.id ?? `directory-address-${index}`} value={address.id ?? ""}>
+                      {address.label || `Adres ${index + 1}`}{address.isDefault ? " · Varsayılan" : ""}
+                    </option>
+                  ))}
+                </select>
+                <span className="directory-address-chevron" aria-hidden="true">⌄</span>
+              </label>
+            ) : (
+              <button
+                className="directory-address-cta"
+                onClick={() => {
+                  if (!authUser) {
+                    navigateView("orders");
+                    return;
+                  }
+                  navigateView("profile");
+                }}
+              >
+                {authUser ? "Adres ekle" : "Adres seç"}
+                <span aria-hidden="true">→</span>
+              </button>
+            ))}
             <button className={view === "orders" ? "orders-link current" : "orders-link"} onClick={() => navigateView("orders")}>Siparişlerim</button>
+            <button className={`orders-link directory-profile-link${view === "profile" ? " current" : ""}`} onClick={() => navigateView("profile")}>Bilgilerim</button>
           </div>
         </header>
-        <main className="directory-page">
+        <main className={view === "menu" ? "directory-page directory-home" : "directory-page"}>
           {view === "orders" ? (
             <>
-              <div className="profile-heading">
+              {!selectedOrderId && <div className="profile-heading">
                 <span className="eyebrow">HESAP GEÇMİŞİ</span>
                 <h1>Siparişlerim</h1>
                 <p>QR Menü üzerinden verdiğiniz siparişleri hesabınızla takip edin.</p>
-              </div>
+              </div>}
               {!authReady ? (
                 <p className="orders-message"><span className="loader" /> Oturum kontrol ediliyor…</p>
               ) : !authUser ? (
@@ -1119,77 +1306,15 @@ function App() {
                 </section>
               ) : ordersLoading && orders.length === 0 ? (
                 <p className="orders-message"><span className="loader" /> Siparişler yükleniyor…</p>
+              ) : selectedOrderId ? (
+                selectedOrder
+                  ? renderOrderDetails(selectedOrder, "Restoran")
+                  : <div className="order-detail-missing"><p>Bu sipariş bulunamadı veya artık bu hesapla görüntülenemiyor.</p><button className="secondary-button" onClick={openOrdersList}>Siparişlerime dön</button></div>
               ) : orders.length === 0 ? (
                 <p className="orders-message">Bu hesapla verilmiş QR siparişi bulunamadı.</p>
               ) : (
                 <div className="orders-list">
-                  {orders.map((order) => (
-                    <article className="customer-order" key={order.id}>
-                      <div className="customer-order-heading">
-                        <div>
-                          <strong>{order.restaurantName ?? "Restoran"} · {order.orderType === "DELIVERY" ? "Eve teslimat" : `Masa ${order.tableName ?? "QR"}`}{order.localNumber ? ` · #${order.localNumber}` : ""}</strong>
-                          <span>{new Date(order.createdAt).toLocaleString("tr-TR")}</span>
-                        </div>
-                        <span className={`order-status ${order.status === "APPROVED" || order.status === "FEE_ACCEPTED" ? "is-approved" : order.status === "REJECTED" || order.status === "FEE_CANCELLED" ? "is-rejected" : ""}`}>
-                          {orderStatusLabel(order.status)}
-                        </span>
-                      </div>
-                      <div className="customer-order-items">
-                        {order.items.map((item, index) => {
-                          const details = orderItemDetails(item);
-                          return (
-                            <div className="customer-order-item" key={`${order.id}-${index}`}>
-                              <div>
-                                <p>{item.quantity}× {details.name}{item.note ? ` · ${item.note}` : ""}</p>
-                                {details.choices.map((choice) => <span key={choice}>{choice}</span>)}
-                              </div>
-                              {typeof item.unitPrice === "number" && <strong>{money.format(item.unitPrice * item.quantity)}</strong>}
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <div className="customer-order-breakdown">
-                        {order.subtotal !== null && <div><span>Ara toplam</span><strong>{money.format(order.subtotal)}</strong></div>}
-                        {(order.discount ?? 0) > 0 && <div><span>İndirim</span><strong>−{money.format(order.discount!)}</strong></div>}
-                        {(order.deliveryFee ?? order.estimatedDeliveryFee) !== null && (order.deliveryFee ?? order.estimatedDeliveryFee)! > 0 && (
-                          <div>
-                            <span>{order.deliveryFee === null ? "Tahmini teslimat ücreti" : "Teslimat ücreti"}</span>
-                            <strong>{money.format((order.deliveryFee ?? order.estimatedDeliveryFee)!)}</strong>
-                          </div>
-                        )}
-                        {order.deliveryDistanceKm !== null && <div><span>Kuş uçuşu mesafe</span><strong>{order.deliveryDistanceKm.toFixed(2)} km</strong></div>}
-                        <div className="customer-order-total">
-                          <span>{order.status === "FEE_CONFIRMATION" ? "Teklif edilen toplam" : order.amount === null ? "Tutar" : order.localNumber ? "Kesin tutar" : "Tahmini tutar"}</span>
-                          <strong>{order.amount === null ? "Restoran belirleyecek" : money.format(order.amount)}</strong>
-                        </div>
-                      </div>
-                      {feeResponseControls(order)}
-                      <section className="customer-order-payment">
-                        <strong>Ödeme</strong>
-                        {order.status === "PAID" ? (
-                          <>
-                            <span>Ödeme restoranda alındı</span>
-                            {order.paymentDetails?.length ? order.paymentDetails.map((payment, index) => (
-                              <div key={`${order.id}-payment-${index}`}>
-                                <span>{paymentMethodLabel(payment.method)}{payment.provider ? ` · ${payment.provider}` : ""}</span>
-                                <strong>{money.format(payment.amount)}</strong>
-                              </div>
-                            )) : <span>Ödeme yöntemi bilgisi bulunmuyor.</span>}
-                          </>
-                        ) : <span>Ödeme, sipariş tesliminde restoranda alınır.</span>}
-                      </section>
-                      <section className="customer-order-timeline">
-                        <strong>Sipariş geçmişi</strong>
-                        <div><span>Sipariş oluşturuldu</span><time>{new Date(order.createdAt).toLocaleString("tr-TR")}</time></div>
-                        {(order.receivedAt || order.claimedAt) && <div><span>Restorana iletildi</span><time>{new Date(order.receivedAt ?? order.claimedAt!).toLocaleString("tr-TR")}</time></div>}
-                        {order.decidedAt && (order.status === "APPROVED" || order.status === "PAID" || order.status === "REJECTED" || order.status === "FEE_ACCEPTED" || order.status === "FEE_CANCELLED") && (
-                          <div><span>{order.status === "REJECTED" || order.status === "FEE_CANCELLED" ? "Sipariş iptal edildi" : order.status === "FEE_ACCEPTED" ? "Ücret kabul edildi" : "Sipariş onaylandı"}</span><time>{new Date(order.decidedAt).toLocaleString("tr-TR")}</time></div>
-                        )}
-                        {order.status === "PAID" && order.paidAt && <div><span>Ödeme alındı</span><time>{new Date(order.paidAt).toLocaleString("tr-TR")}</time></div>}
-                      </section>
-                      {order.status === "REJECTED" && order.reason && <p className="order-reason">{order.reason}</p>}
-                    </article>
-                  ))}
+                  {orders.map((order) => renderOrderSummary(order, "Restoran"))}
                 </div>
               )}
               {feeResponseMessage && <p className="profile-saved" role="status">{feeResponseMessage}</p>}
@@ -1198,35 +1323,21 @@ function App() {
           ) : (
             <>
             <div className="profile-heading">
-              <span className="eyebrow">YAKININDAKİ LEZZETLER</span>
-              <h1>Restoranlar</h1>
-              <p>Restoranlar kayıtlı adresinize olan uzaklığa göre sıralanır. Menüden eve sipariş verebilirsiniz.</p>
+              <span className="eyebrow"><span className="directory-live-dot" /> YAKININDAKİ LEZZETLER</span>
+              <h1>Bugün ne <em>yesek?</em></h1>
+              <p>Adresine yakın restoranları keşfet, menüye göz at ve siparişini ver.</p>
             </div>
-            {authUser && profileLoading ? (
-              <p className="directory-address-status"><span className="loader" /> Kayıtlı adresler yükleniyor…</p>
-            ) : authUser && profileError ? (
-              <p className="inline-error" role="alert">{profileError}</p>
-            ) : authUser && contactProfile.addresses.length > 1 ? (
-              <label className="field-label directory-address-select">
-                Yakınlığı hesaplanacak adres
-                <select value={selectedDeliveryAddressId} onChange={(event) => setSelectedDeliveryAddressId(event.target.value)}>
-                  {contactProfile.addresses.map((address, index) => (
-                    <option key={address.id ?? `directory-address-${index}`} value={address.id ?? ""}>
-                      {address.label || `Adres ${index + 1}`}{address.isDefault ? " · Varsayılan" : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : authUser && selectedDeliveryAddress ? (
-              <p className="directory-address-status">
-                Seçili adres: {selectedDeliveryAddress.label || selectedDeliveryAddress.address}
-                {!selectedAddressHasLocation && " · Yakınlığa göre sıralama için bu adresin konumunu Bilgilerim’den kaydedin."}
-              </p>
-            ) : authUser ? (
-              <p className="directory-address-status">Yakınlığa göre sıralama için Bilgilerim’e teslimat adresi ekleyip konumunu kaydedin.</p>
-            ) : authReady ? (
-              <p className="directory-address-status">Kayıtlı adresinize göre sıralama için Siparişlerim’den giriş yapın; adres konumunuzu Bilgilerim’de kaydedin.</p>
-            ) : null}
+            {authUser && profileError && <p className="inline-error" role="alert">{profileError}</p>}
+            <div className="directory-results-heading">
+              <strong>Restoranlar</strong>
+              {!restaurantsLoading && <span>{restaurants.length} mekan</span>}
+              {authUser && selectedDeliveryAddress && !selectedAddressHasLocation && (
+                <small>Yakınlığa göre sıralama için adres konumunu Bilgilerim’den kaydedin.</small>
+              )}
+              {authUser && !profileLoading && contactProfile.addresses.length === 0 && (
+                <small>Adres eklediğinizde restoranları yakınlığınıza göre sıralarız.</small>
+              )}
+            </div>
             {restaurantsLoading ? (
             <p className="orders-message"><span className="loader" /> Restoranlar yükleniyor…</p>
           ) : restaurants.length ? (
@@ -1491,11 +1602,11 @@ function App() {
         </main>
       ) : view === "orders" ? (
         <main className="orders-page">
-          <div className="orders-heading">
+          {!selectedOrderId && <div className="orders-heading">
             <span className="eyebrow">HESAP GEÇMİŞİ</span>
             <h1>Siparişlerim</h1>
             <p>QR Menü hesabınızla verdiğiniz siparişleri ve tutar bilgilerini buradan takip edebilirsiniz.</p>
-          </div>
+          </div>}
           {!authUser ? (
             <section className="orders-login">
               <p>Siparişlerinizi görmek için Google veya Apple hesabınızla giriş yapın.</p>
@@ -1506,45 +1617,15 @@ function App() {
             </section>
           ) : ordersLoading && orders.length === 0 ? (
             <p className="orders-message"><span className="loader" /> Siparişler yükleniyor…</p>
+          ) : selectedOrderId ? (
+            selectedOrder
+              ? renderOrderDetails(selectedOrder, menu.shop)
+              : <div className="order-detail-missing"><p>Bu sipariş bulunamadı veya artık bu hesapla görüntülenemiyor.</p><button className="secondary-button" onClick={openOrdersList}>Siparişlerime dön</button></div>
           ) : orders.length === 0 ? (
             <p className="orders-message">Bu hesapla verilmiş QR siparişi bulunamadı.</p>
-          ) : (
-            <>
-              <div className="orders-list">
-                {orders.map((order) => (
-                  <article className="customer-order" key={order.id}>
-                    <div className="customer-order-heading">
-                      <div>
-                        <strong>{order.restaurantName ?? menu.shop} · {order.orderType === "DELIVERY" ? "Eve teslimat" : `Masa ${order.tableName ?? "QR"}`}{order.localNumber ? ` · #${order.localNumber}` : ""}</strong>
-                        <span>{new Date(order.createdAt).toLocaleString("tr-TR")}</span>
-                      </div>
-                      <span className={`order-status ${order.status === "APPROVED" || order.status === "FEE_ACCEPTED" ? "is-approved" : order.status === "REJECTED" || order.status === "FEE_CANCELLED" ? "is-rejected" : ""}`}>
-                        {orderStatusLabel(order.status)}
-                      </span>
-                    </div>
-                    <div className="customer-order-items">
-                      {order.items.map((item, index) => {
-                        const details = orderItemDetails(item);
-                        return (
-                          <div key={`${order.id}-${index}`}>
-                            <p>{item.quantity}× {details.name}{item.note ? ` · ${item.note}` : ""}</p>
-                            {details.choices.map((choice) => <span key={choice}>{choice}</span>)}
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div className="customer-order-total">
-                      <span>{order.status === "FEE_CONFIRMATION" ? "Teklif edilen toplam" : order.amount === null ? "Tutar" : order.localNumber ? "Kesin tutar" : "Tahmini tutar"}</span>
-                      <strong>{order.amount === null ? "Restoran belirleyecek" : money.format(order.amount)}</strong>
-                    </div>
-                    {order.deliveryDistanceKm !== null && <p className="muted-copy">Kuş uçuşu mesafe: {order.deliveryDistanceKm.toFixed(2)} km</p>}
-                    {feeResponseControls(order)}
-                    {order.status === "REJECTED" && order.reason && <p className="order-reason">{order.reason}</p>}
-                  </article>
-                ))}
-              </div>
-            </>
-          )}
+          ) : <div className="orders-list">
+            {orders.map((order) => renderOrderSummary(order, menu.shop))}
+          </div>}
           {feeResponseMessage && <p className="profile-saved" role="status">{feeResponseMessage}</p>}
           {ordersError && <p className="inline-error" role="alert">{ordersError}</p>}
         </main>
@@ -1793,8 +1874,11 @@ function App() {
                     <div className="delivery-profile-hint">
                       {profileLoading ? (
                         <span>Adres ve telefon bilgileriniz kontrol ediliyor…</span>
-                      ) : deliveryProfileReady ? (
-                        <span>Teslimat adresi ve telefonunuz seçiminize göre Bilgilerim’den alınacak.</span>
+                      ) : deliveryProfileReady && selectedDeliveryAddress ? (
+                        <span>
+                          <strong>{selectedDeliveryAddress.label || "Teslimat adresi"}</strong> · {selectedDeliveryAddress.address}
+                          {contactProfile.phone && <> · {contactProfile.phone}</>}
+                        </span>
                       ) : (
                         <>
                           <span>Eve teslimat için Bilgilerim’de adres ve telefon ekleyip otomatik paylaşımı açın.</span>
@@ -1802,18 +1886,6 @@ function App() {
                         </>
                       )}
                     </div>
-                  )}
-                  {!menu.isTableQr && deliveryProfileReady && contactProfile.addresses.length > 1 && (
-                    <label className="field-label delivery-address-select">
-                      Teslimat adresi
-                      <select value={selectedDeliveryAddressId} onChange={(event) => setSelectedDeliveryAddressId(event.target.value)}>
-                        {contactProfile.addresses.map((address, index) => (
-                          <option key={address.id ?? `legacy-address-${index}`} value={address.id ?? ""}>
-                            {address.label}: {address.address}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
                   )}
                   {!menu.isTableQr && menu.deliveryPerKm !== null && !selectedAddressHasLocation && (
                     <div className="delivery-profile-hint">

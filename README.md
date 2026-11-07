@@ -107,6 +107,12 @@ Token Google veya Apple üzerinden Firebase Authentication'dan alınır.
 | `GET /m/:tableToken/orders/:id?sessionId=<uuid>` | Firebase Bearer | `{status,number,reason}` |
 | `GET /m/account/history/orders` | Firebase Bearer | Hesap sahibinin son 100 restoranlar arası QR siparişi |
 
+Sipariş geçmişi kısa özet kartları gösterir; karta dokununca siparişin ürün,
+ücret, ödeme ve durum geçmişi ayrı bir detay sayfasında açılır.
+Teslimat adresi restoran dizininde seçilir ve kullanıcı bazında cihazda saklanır;
+restoran menüsündeki sepet yalnızca bu adresi kullanır, adres değişimi ana
+sayfadan yapılır.
+
 Profil uçları en fazla 10 kayıtlı teslimat adresi döndürür ve kaydeder:
 `addresses:[{id,label,address,latitude,longitude,isDefault}]`. Enlem/boylam
 opsiyoneldir ve birlikte ayarlanmalıdır. Eski `address` alanı varsayılan

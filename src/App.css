@@ -164,8 +164,25 @@
 .orders-login,.customer-order { padding:18px;border:1px solid #eeece6;border-radius:16px;background:#fff; }
 .orders-login .auth-actions { max-width:460px; }
 .orders-message { display:flex;align-items:center;justify-content:center;gap:10px;min-height:130px; }
-.orders-list { display:flex;flex-direction:column;gap:12px; }
+.orders-list { display:flex;flex-direction:column;gap:9px; }
+.customer-order-summary { width:100%;min-width:0;display:grid;grid-template-columns:minmax(0,1fr) auto auto 12px;align-items:center;gap:15px;padding:13px 15px;border:1px solid #eeece6;border-radius:14px;background:#fff;color:#282720;text-align:left;box-shadow:0 4px 14px #27241a06;transition:border-color .16s,box-shadow .16s,transform .16s; }
+.customer-order-summary:hover { transform:translateY(-1px);border-color:#d6c9a9;box-shadow:0 9px 22px #24231f0d; }
+.customer-order-summary-main { min-width:0;display:flex;flex-direction:column;gap:4px; }
+.customer-order-summary-main > strong { overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px; }
+.customer-order-summary-main > small,.customer-order-summary-main > span { overflow:hidden;color:#858178;font-size:10px;text-overflow:ellipsis;white-space:nowrap; }
+.customer-order-summary-total { min-width:95px;display:flex;flex-direction:column;align-items:flex-end;gap:3px; }
+.customer-order-summary-total small { color:#99958a;font-size:9px; }
+.customer-order-summary-total strong { color:#a77b2a;font-size:13px; }
+.customer-order-summary-arrow { color:#a77b2a;font-size:22px;line-height:1; }
 .customer-order { display:flex;flex-direction:column;gap:14px; }
+.order-detail-view { max-width:760px;margin:0 auto; }
+.order-back-button { margin:0 0 17px;padding:7px 0;border:0;background:transparent;color:#856426;font-size:12px;font-weight:800; }
+.order-detail-view .orders-heading { margin-bottom:18px; }
+.order-detail-view .orders-heading h1 { margin:7px 0;font-size:25px; }
+.order-detail-view .orders-heading p { margin:0; }
+.order-detail-card { padding:20px; }
+.order-detail-missing { padding:18px;border:1px solid #eeece6;border-radius:14px;background:#fff;color:#77746c;font-size:13px; }
+.order-detail-missing .secondary-button { min-height:38px; }
 .customer-order-heading { display:flex;align-items:flex-start;justify-content:space-between;gap:12px; }
 .customer-order-heading > div { display:flex;flex-direction:column;gap:5px; }.customer-order-heading strong { font-size:14px; }.customer-order-heading > div span { color:#99958a;font-size:11px; }
 .order-status { flex:none;padding:6px 9px;border-radius:20px;background:#f5f2ea;color:#8b7443;font-size:11px;font-weight:700; }
@@ -189,12 +206,29 @@
 @keyframes spin { to {transform:rotate(360deg)} }
 .directory-page { width:min(100% - 32px,760px);margin:38px auto 70px; }
 .directory-page .profile-heading { margin-bottom:22px; }
-.directory-address-select { max-width:520px;margin:0 0 16px; }
-.directory-address-status { margin:0 0 16px;padding:11px 13px;border:1px solid #e9e5db;border-radius:11px;background:#faf9f6;color:#625f56;font-size:11px;line-height:1.45; }
+.restaurant-directory { background:linear-gradient(180deg,#f7f5ef 0,#fbfaf7 320px,#fbfaf7 100%); }
+.restaurant-directory > .topbar { position:sticky;z-index:10;top:0;max-width:none;padding-right:max(28px,calc((100vw - 1200px)/2));padding-left:max(28px,calc((100vw - 1200px)/2));border-bottom:1px solid #eae6dc;background:#ffffffed;backdrop-filter:blur(16px); }
+.directory-address-picker { position:relative;min-width:190px;display:flex;flex-direction:column;gap:3px;padding:7px 34px 7px 12px;border:1px solid #e8e4da;border-radius:12px;background:#fff; }
+.directory-address-picker > span:first-child { color:#9b8c6b;font-size:8px;font-weight:800;letter-spacing:1px; }
+.directory-address-picker select { width:100%;min-width:0;padding:0;border:0;outline:0;appearance:none;background:transparent;color:#38372f;font-size:11px;font-weight:750; }
+.directory-address-chevron { position:absolute;right:12px;bottom:8px;color:#a77b2a;font-size:16px;pointer-events:none; }
+.directory-address-cta { min-height:42px;display:flex;align-items:center;gap:10px;padding:0 14px;border:1px solid #e5d7b6;border-radius:12px;background:#fbf7ed;color:#795b23;font-size:12px;font-weight:800; }
+.directory-address-cta span { font-size:17px; }
+.directory-home { width:min(100% - 32px,1080px);margin:0 auto 70px;padding-top:47px; }
+.directory-home .profile-heading { position:relative;margin:0 0 35px;padding:38px 40px;border:1px solid #eee8d8;border-radius:24px;background:radial-gradient(ellipse at 87% 14%,#f0e2bf 0,transparent 35%),linear-gradient(120deg,#fff 0%,#faf7ef 100%);box-shadow:0 15px 40px #5443200a; }
+.directory-home .profile-heading .eyebrow { display:flex;align-items:center;gap:8px;color:#927339;font-size:9px; }
+.directory-live-dot { width:7px;height:7px;border-radius:50%;background:#79a37b;box-shadow:0 0 0 4px #79a37b20; }
+.directory-home .profile-heading h1 { margin:14px 0 8px;font-size:38px;letter-spacing:-1.3px; }
+.directory-home .profile-heading h1 em { color:#a77b2a;font-style:normal; }
+.directory-home .profile-heading p { max-width:480px;margin:0;color:#77746c;font-size:13px; }
+.directory-results-heading { display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 0 14px; }
+.directory-results-heading strong { color:#333229;font:800 19px Manrope,sans-serif;letter-spacing:-.4px; }
+.directory-results-heading > span { color:#9a968b;font-size:10px; }
+.directory-results-heading small { flex-basis:100%;color:#9a6f36;font-size:10px; }
 .restaurant-list { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px; }
-.restaurant-card { min-width:0;min-height:84px;padding:15px;display:flex;align-items:center;gap:12px;border:1px solid #eeece6;border-radius:15px;background:#fff;color:#282720;text-decoration:none;transition:border-color .16s,box-shadow .16s; }
-.restaurant-card:hover { border-color:#d6c9a9;box-shadow:0 9px 28px #24231f0c; }
-.restaurant-card .brand-mark { width:42px;height:42px;border-radius:13px;font-size:16px; }
+.restaurant-card { min-width:0;min-height:100px;padding:17px;display:flex;align-items:center;gap:14px;border:1px solid #eeece6;border-radius:17px;background:#fff;color:#282720;text-decoration:none;box-shadow:0 6px 20px #27241a08;transition:border-color .16s,box-shadow .16s,transform .16s; }
+.restaurant-card:hover { transform:translateY(-2px);border-color:#d6c9a9;box-shadow:0 12px 30px #24231f12; }
+.restaurant-card .brand-mark { width:48px;height:48px;border-radius:15px;font-size:17px; }
 .restaurant-card > span:nth-child(2) { min-width:0;flex:1;display:flex;flex-direction:column;gap:5px; }
 .restaurant-card strong { overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px; }
 .restaurant-card small { color:#858178;font-size:10px;line-height:1.4; }
@@ -218,11 +252,14 @@
   .category-nav { margin-right:-17px;padding:18px 17px 16px 0; }.product-grid { grid-template-columns:1fr;gap:9px; }.product-card { min-height:93px; }.product-image { width:70px;height:70px; }
   .page-footer { margin-top:42px;padding:17px; }.cart-bar { bottom:calc(76px + env(safe-area-inset-bottom)); }.overlay { padding:0; }.dialog { max-height:91vh;border-radius:22px 22px 0 0; }.status-overlay { padding:18px; }.status-dialog { border-radius:22px; }
   .orders-page,.profile-page { min-height:calc(100vh - 100px);margin:27px auto;padding:0 17px; }.orders-heading h1,.profile-heading h1 { font-size:26px; }.customer-order { padding:15px; }.profile-card { padding:17px; }.profile-session-actions { padding-right:2px;padding-left:2px; }
-  .directory-page { width:auto;margin:27px 17px 60px; }.restaurant-list { grid-template-columns:1fr;gap:9px; }.restaurant-card { min-height:76px;padding:12px; }
+  .restaurant-directory > .topbar { height:66px;padding:0 14px; }.restaurant-directory .topbar-actions { margin-left:auto; }.restaurant-directory .topbar-actions > .directory-profile-link { min-height:35px;display:inline-flex;align-items:center;padding:0 9px;font-size:10px; }.directory-address-picker { min-width:130px;max-width:160px;padding:6px 26px 6px 9px; }.directory-address-picker select { font-size:10px; }.directory-address-chevron { right:8px;bottom:7px; }.directory-address-cta { min-height:36px;padding:0 9px;font-size:10px; }
+  .directory-page { width:auto;margin:27px 17px 60px; }.directory-home { margin:0 17px 60px;padding-top:23px; }.directory-home .profile-heading { margin-bottom:25px;padding:27px 22px;border-radius:19px; }.directory-home .profile-heading h1 { font-size:29px; }.directory-results-heading { margin-bottom:12px; }.restaurant-list { grid-template-columns:1fr;gap:9px; }.restaurant-card { min-height:82px;padding:13px; }
+  .customer-order-summary { grid-template-columns:minmax(0,1fr) auto;gap:8px 10px;padding:12px; }.customer-order-summary-main { grid-column:1; }.customer-order-summary .order-status { grid-column:2;grid-row:1; }.customer-order-summary-total { min-width:0;grid-column:1;grid-row:2;align-items:flex-start; }.customer-order-summary-arrow { grid-column:2;grid-row:2;justify-self:end; }.order-detail-card { padding:15px; }
 }
 
 @media (max-width:390px) {
   .topbar { padding:0 10px; }.brand-copy strong { max-width:32vw;font-size:12px; }.topbar-actions { gap:4px; }.orders-link { padding:0 7px;font-size:10px; }.table-pill { padding:7px;font-size:10px; }.bottom-nav-item { font-size:9px; }
+  .restaurant-directory > .topbar { padding:0 10px; }.restaurant-directory .brand-copy strong { max-width:29vw;font-size:11px; }.directory-address-picker { min-width:112px;max-width:135px; }.directory-address-picker > span:first-child { font-size:7px; }.directory-address-picker select { font-size:9px; }.directory-address-cta { gap:5px;padding:0 7px;font-size:9px; }.restaurant-directory .topbar-actions > .directory-profile-link { padding:0 7px;font-size:9px; }
   .auth-actions { grid-template-columns:1fr; }.auth-actions button { min-height:43px; }.dialog-scroll { padding:25px 20px 16px; }
 }
 
