@@ -19,63 +19,14 @@ import {
 import { clearSession, customerRequest, getAccessToken, request } from "./api";
 import { firebaseConfig } from "./firebase-config";
 import { getFirebaseApp, getFirebaseAuth } from "./firebase";
+import { AddressBookPage } from "./pages/AddressBookPage";
+import { MenuPage } from "./pages/MenuPage";
+import { OrderHistoryPage } from "./pages/OrderHistoryPage";
+import { ProfilePage } from "./pages/ProfilePage";
+import { RestaurantDirectoryPage } from "./pages/RestaurantDirectoryPage";
+import type { CartLine, ContactAddress, ContactProfile, CustomerOrder, MenuResponse, Product, Restaurant } from "./types";
 import "./App.css";
 
-type ModifierOption = {
-  id: string;
-  name: string;
-  delta: number;
-  abs: number | null;
-};
-
-type ModifierGroup = {
-  id: string;
-  name: string;
-  min: number;
-  max: number;
-  options: ModifierOption[];
-};
-
-type MenuSlot = {
-  id: string;
-  name: string;
-  required: boolean;
-  options: { id: string; productId: string; name: string; upcharge: number; soldOut: boolean }[];
-};
-
-type Product = {
-  id: string;
-  name: string;
-  description?: string;
-  imageUrl?: string;
-  price: number;
-  soldOut: boolean;
-  isMenu?: boolean;
-  groups: ModifierGroup[];
-  slots?: MenuSlot[];
-};
-
-type MenuResponse = {
-  tenantId: string;
-  shop: string;
-  address: string;
-  phone: string;
-  table: string | null;
-  isTableQr: boolean;
-  dineInEnabled: boolean;
-  deliveryEnabled: boolean;
-  deliveryAcceptingOrders?: boolean;
-  deliveryFee: number;
-  deliveryPerKm: number | null;
-  deliveryMinimumOrder: number;
-  deliveryOriginLatitude: number | null;
-  deliveryOriginLongitude: number | null;
-  categories: { id: string; name: string; products: Product[] }[];
-};
-type Restaurant = { id: string; name: string; address: string; phone: string; dineInEnabled: boolean; deliveryEnabled: boolean; deliveryAcceptingOrders?: boolean; deliveryFee: number; deliveryPerKm: number | null; deliveryMinimumOrder: number; deliveryOriginLatitude: number | null; deliveryOriginLongitude: number | null };
-
-type ContactAddress = { id: string | null; label: string; address: string; latitude?: number | null; longitude?: number | null; isDefault: boolean };
-type ContactProfile = { name: string; phone: string; address: string; addresses: ContactAddress[]; shareWithRestaurant: boolean };
 const MAX_SAVED_ADDRESSES = 10;
 
 function emptyContactProfile(): ContactProfile {
@@ -110,41 +61,7 @@ function contactProfileFromServer(profile: Partial<ContactProfile>): ContactProf
   };
 }
 
-type CartLine = {
-  key: string;
-  product: Product;
-  quantity: number;
-  note: string;
-  modifierIds: string[];
-  menuOptionIds: string[];
-  choiceNames: string[];
-  unitPrice: number;
-};
-
-type CustomerOrder = {
-  id: string;
-  items: { productId: string; productName?: string; choiceNames?: string[]; quantity: number; unitPrice?: number; note?: string; modifierIds?: string[]; menuOptionIds?: string[] }[];
-  orderType: "DINE_IN" | "DELIVERY";
-  status: "PENDING" | "CLAIMED" | "RECEIVED" | "FEE_CONFIRMATION" | "FEE_ACCEPTED" | "FEE_CANCELLED" | "APPROVED" | "REJECTED" | "PAID";
-  tenantId: string;
-  sessionId: string;
-  localNumber: number | null;
-  amount: number | null;
-  subtotal: number | null;
-  discount: number | null;
-  deliveryFee: number | null;
-  estimatedDeliveryFee: number | null;
-  deliveryDistanceKm: number | null;
-  paymentDetails: { method: string; amount: number; provider?: string | null; paidAt: string }[] | null;
-  claimedAt: string | null;
-  receivedAt: string | null;
-  decidedAt: string | null;
-  paidAt: string | null;
-  reason: string | null;
-  createdAt: string;
-  restaurantName?: string;
-  tableName?: string | null;
-};
+const EMPTY_CATEGORIES: MenuResponse["categories"] = [];
 
 const money = new Intl.NumberFormat("tr-TR", {
   style: "currency",
@@ -165,7 +82,8 @@ function getRestaurantId() {
 function getMenuPath() {
   const parts = window.location.pathname.split("/").filter(Boolean);
   if (parts.at(-2) === "orders") parts.pop();
-  if (parts.at(-1) === "orders" || parts.at(-1) === "profile") parts.pop();
+  if (parts.at(-1) === "orders" || parts.at(-1) === "profile" || parts.at(-1) === "addresses") parts.pop();
+  if (parts.at(-1) === "profile") parts.pop();
   return `/${parts.join("/")}`;
 }
 
@@ -181,6 +99,11 @@ function isOrdersPath() {
 
 function isProfilePath() {
   return window.location.pathname.split("/").filter(Boolean).at(-1) === "profile";
+}
+
+function isAddressesPath() {
+  const parts = window.location.pathname.split("/").filter(Boolean);
+  return parts.at(-1) === "addresses" && parts.at(-2) === "profile";
 }
 
 function contactProfileKey(menu: MenuResponse) {
@@ -287,7 +210,8 @@ function App() {
   const [lineNoteKey, setLineNoteKey] = useState<string | null>(null);
   const [lineNoteDraft, setLineNoteDraft] = useState("");
   const [orderSent, setOrderSent] = useState(false);
-  const [view, setView] = useState<"menu" | "orders" | "profile">(() => isOrdersPath() ? "orders" : isProfilePath() ? "profile" : "menu");
+  const [view, setView] = useState<"menu" | "orders" | "profile" | "addresses">(() =>
+    isOrdersPath() ? "orders" : isAddressesPath() ? "addresses" : isProfilePath() ? "profile" : "menu");
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(() => getOrderDetailId());
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -390,13 +314,15 @@ function App() {
     }
   }
 
-  function navigateView(next: "menu" | "orders" | "profile") {
+  function navigateView(next: "menu" | "orders" | "profile" | "addresses") {
     const menuPath = getMenuPath();
     const target = next === "orders"
       ? menuApiPath ? `${menuPath}/orders` : "/orders"
-      : next === "profile" ? `${menuPath}/profile` : menuPath;
+      : next === "profile" ? menuApiPath ? `${menuPath}/profile` : "/profile"
+        : next === "addresses" ? menuApiPath ? `${menuPath}/profile/addresses` : "/profile/addresses"
+          : menuPath;
     if (window.location.pathname !== target) window.history.pushState({}, "", target);
-    if (next === "profile") setContactDraft(contactProfile);
+    if (next === "profile" || next === "addresses") setContactDraft(contactProfile);
     setSelectedOrderId(null);
     setView(next);
   }
@@ -499,7 +425,7 @@ function App() {
   useEffect(() => {
     const onPopState = () => {
       setSelectedOrderId(getOrderDetailId());
-      setView(isOrdersPath() ? "orders" : isProfilePath() ? "profile" : "menu");
+      setView(isOrdersPath() ? "orders" : isAddressesPath() ? "addresses" : isProfilePath() ? "profile" : "menu");
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
@@ -598,8 +524,11 @@ function App() {
     };
   }, [authUser, view]);
 
-  const categories = menu?.categories ?? [];
-  const selectedOrder = orders.find((order) => order.id === selectedOrderId) ?? null;
+  const categories = menu?.categories ?? EMPTY_CATEGORIES;
+  const selectedOrder = useMemo(
+    () => orders.find((order) => order.id === selectedOrderId) ?? null,
+    [orders, selectedOrderId],
+  );
   const visibleCategories = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("tr");
     return categories
@@ -622,9 +551,12 @@ function App() {
   const selectedDeliveryAddress = contactProfile.addresses.find((address) => (address.id ?? "") === selectedDeliveryAddressId);
   const selectedAddressHasLocation = Number.isFinite(selectedDeliveryAddress?.latitude) &&
     Number.isFinite(selectedDeliveryAddress?.longitude);
-  const selectedAddressLocation = selectedAddressHasLocation && selectedDeliveryAddress
-    ? { latitude: selectedDeliveryAddress.latitude!, longitude: selectedDeliveryAddress.longitude! }
-    : null;
+  const selectedAddressLocation = useMemo(
+    () => selectedAddressHasLocation && selectedDeliveryAddress
+      ? { latitude: selectedDeliveryAddress.latitude!, longitude: selectedDeliveryAddress.longitude! }
+      : null,
+    [selectedAddressHasLocation, selectedDeliveryAddress],
+  );
   const deliveryDistanceKm = menu?.isTableQr === false &&
     menu.deliveryPerKm !== null &&
     Number.isFinite(menu.deliveryOriginLatitude) &&
@@ -644,7 +576,7 @@ function App() {
     }
     : null;
   const deliveryTotal = total + (menu?.isTableQr ? 0 : activeDeliveryQuote?.fee ?? menu?.deliveryFee ?? 0);
-  const directoryRestaurants = selectedAddressLocation
+  const directoryRestaurants = useMemo(() => selectedAddressLocation
     ? restaurants
       .map((restaurant) => ({
         restaurant,
@@ -660,7 +592,11 @@ function App() {
         if (b.distance === null) return -1;
         return a.distance - b.distance;
       })
-    : restaurants.map((restaurant) => ({ restaurant, distance: null }));
+    : restaurants.map((restaurant) => ({ restaurant, distance: null })), [restaurants, selectedAddressLocation]);
+  const sortedRestaurants = useMemo(
+    () => directoryRestaurants.map(({ restaurant }) => restaurant),
+    [directoryRestaurants],
+  );
   const deliveryLocationReady = menu?.isTableQr !== false || menu?.deliveryPerKm === null || selectedAddressHasLocation;
   const deliveryProfileReady = !!authUser &&
     !profileLoading &&
@@ -668,13 +604,13 @@ function App() {
     !!selectedDeliveryAddress?.address.trim() &&
     !!contactProfile.phone.trim();
 
-  function openProduct(product: Product) {
+  const openProduct = useCallback((product: Product) => {
     setSelectedProduct(product);
     setSelectedOptions({});
     setProductQuantity(1);
     setProductNote("");
     setActionError("");
-  }
+  }, []);
 
   function addToCart() {
     if (!selectedProduct) return;
@@ -1282,87 +1218,60 @@ function App() {
               </button>
             ))}
             <button className={view === "orders" ? "orders-link current" : "orders-link"} onClick={() => navigateView("orders")}>Siparişlerim</button>
-            <button className={`orders-link directory-profile-link${view === "profile" ? " current" : ""}`} onClick={() => navigateView("profile")}>Bilgilerim</button>
+            <button className={`orders-link directory-profile-link${view === "profile" || view === "addresses" ? " current" : ""}`} onClick={() => navigateView("profile")}>Bilgilerim</button>
           </div>
         </header>
-        <main className={view === "menu" ? "directory-page directory-home" : "directory-page"}>
-          {view === "orders" ? (
-            <>
-              {!selectedOrderId && <div className="profile-heading">
-                <span className="eyebrow">HESAP GEÇMİŞİ</span>
-                <h1>Siparişlerim</h1>
-                <p>QR Menü üzerinden verdiğiniz siparişleri hesabınızla takip edin.</p>
-              </div>}
-              {!authReady ? (
-                <p className="orders-message"><span className="loader" /> Oturum kontrol ediliyor…</p>
-              ) : !authUser ? (
-                <section className="orders-login">
-                  <p>Sipariş geçmişinizi görmek için sipariş verirken kullandığınız Google veya Apple hesabıyla giriş yapın.</p>
-                  <div className="auth-actions">
-                    <button className="primary-button" onClick={() => void signInForOrders("google")}>Google ile giriş yap</button>
-                    <button className="secondary-button" onClick={() => void signInForOrders("apple")}>Apple ile giriş yap</button>
-                  </div>
-                  {ordersError && <p className="inline-error" role="alert">{ordersError}</p>}
-                </section>
-              ) : ordersLoading && orders.length === 0 ? (
-                <p className="orders-message"><span className="loader" /> Siparişler yükleniyor…</p>
-              ) : selectedOrderId ? (
-                selectedOrder
-                  ? renderOrderDetails(selectedOrder, "Restoran")
-                  : <div className="order-detail-missing"><p>Bu sipariş bulunamadı veya artık bu hesapla görüntülenemiyor.</p><button className="secondary-button" onClick={openOrdersList}>Siparişlerime dön</button></div>
-              ) : orders.length === 0 ? (
-                <p className="orders-message">Bu hesapla verilmiş QR siparişi bulunamadı.</p>
-              ) : (
-                <div className="orders-list">
-                  {orders.map((order) => renderOrderSummary(order, "Restoran"))}
-                </div>
-              )}
-              {feeResponseMessage && <p className="profile-saved" role="status">{feeResponseMessage}</p>}
-              {ordersError && <p className="inline-error" role="alert">{ordersError}</p>}
-            </>
+        <>
+          {view === "addresses" ? (
+            <AddressBookPage
+              authReady={authReady} user={authUser} loading={profileLoading} saving={profileSaving}
+              saved={profileSaved} ordersError={ordersError} profileError={profileError} actionError={actionError}
+              addresses={contactDraft.addresses} expandedAddressId={expandedAddressId}
+              locationBusyIndex={addressLocationBusy} maxAddresses={MAX_SAVED_ADDRESSES}
+              onBack={() => navigateView("profile")} onLogin={(provider) => void signInForOrders(provider)}
+              onToggleAddress={(id) => setExpandedAddressId((current) => current === id ? null : id)}
+              onUpdateAddress={updateContactAddress} onSaveLocation={(index) => void saveAddressLocation(index)}
+              onSetDefaultAddress={setDefaultContactAddress} onRemoveAddress={removeContactAddress}
+              onAddAddress={addContactAddress} onSave={() => void saveContactProfile()}
+            />
+          ) : view === "profile" ? (
+            <ProfilePage
+              authReady={authReady} user={authUser} loading={profileLoading} ordersError={ordersError}
+              draft={contactDraft} profileError={profileError} actionError={actionError}
+              saved={profileSaved} saving={profileSaving} pushRegistered={pushRegistered}
+              pushBusy={pushBusy} pushMessage={pushMessage} pushError={pushError}
+              onLogin={(provider) => void signInForOrders(provider)}
+              onChange={(field, value) => {
+                setProfileSaved(false);
+                setContactDraft((current) => field === "name" ? { ...current, name: String(value) }
+                  : field === "phone" ? { ...current, phone: String(value) }
+                    : { ...current, shareWithRestaurant: Boolean(value) });
+              }}
+              onOpenAddresses={() => navigateView("addresses")}
+              onToggleNotifications={() => void toggleOrderNotifications()}
+              onSave={() => void saveContactProfile()} onSignOut={() => void signOutProfile()}
+            />
+          ) : view === "orders" ? (
+            <main className="directory-page">
+              <OrderHistoryPage
+                scope="account" user={authUser} authReady={authReady} loading={ordersLoading}
+                orders={orders} selectedOrderId={selectedOrderId} selectedOrder={selectedOrder}
+                ordersError={ordersError} feeResponseMessage={feeResponseMessage}
+                onLogin={(provider) => void signInForOrders(provider)} onBack={openOrdersList}
+                renderOrderSummary={(order) => renderOrderSummary(order, "Restoran")}
+                renderOrderDetails={(order) => renderOrderDetails(order, "Restoran")}
+              />
+            </main>
           ) : (
-            <>
-            <div className="profile-heading">
-              <span className="eyebrow"><span className="directory-live-dot" /> YAKININDAKİ LEZZETLER</span>
-              <h1>Bugün ne <em>yesek?</em></h1>
-              <p>Adresine yakın restoranları keşfet, menüye göz at ve siparişini ver.</p>
-            </div>
-            {authUser && profileError && <p className="inline-error" role="alert">{profileError}</p>}
-            <div className="directory-results-heading">
-              <strong>Restoranlar</strong>
-              {!restaurantsLoading && <span>{restaurants.length} mekan</span>}
-              {authUser && selectedDeliveryAddress && !selectedAddressHasLocation && (
-                <small>Yakınlığa göre sıralama için adres konumunu Bilgilerim’den kaydedin.</small>
-              )}
-              {authUser && !profileLoading && contactProfile.addresses.length === 0 && (
-                <small>Adres eklediğinizde restoranları yakınlığınıza göre sıralarız.</small>
-              )}
-            </div>
-            {restaurantsLoading ? (
-            <p className="orders-message"><span className="loader" /> Restoranlar yükleniyor…</p>
-          ) : restaurants.length ? (
-            <div className="restaurant-list">
-              {directoryRestaurants.map(({ restaurant }) => (
-                <a className="restaurant-card" href={`/restaurant/${encodeURIComponent(restaurant.id)}`} key={restaurant.id}>
-                  <span className="brand-mark">{restaurant.name.trim().charAt(0).toLocaleUpperCase("tr-TR") || "R"}</span>
-                  <span>
-                    <strong>{restaurant.name}</strong>
-                    <small className="restaurant-order-types">
-                      Eve teslimat{restaurant.deliveryMinimumOrder > 0 ? ` · Min. sipariş ${money.format(restaurant.deliveryMinimumOrder)}` : ""}{restaurant.dineInEnabled ? " · Masa QR" : ""}
-                    </small>
-                    {restaurant.deliveryAcceptingOrders === false && <small className="delivery-paused-label">Şu an online eve siparişi alınmıyor.</small>}
-                    <small>{[restaurant.address, restaurant.phone].filter(Boolean).join(" · ") || "Menüyü görüntüle · Eve sipariş ver"}</small>
-                  </span>
-                  <b aria-hidden="true">→</b>
-                </a>
-              ))}
-            </div>
-          ) : (
-            <p className="orders-message">Şu an listelenecek açık restoran bulunmuyor.</p>
+            <main className={view === "menu" ? "directory-page directory-home" : "directory-page"}>
+              <RestaurantDirectoryPage
+                restaurants={sortedRestaurants} loading={restaurantsLoading} profileError={profileError}
+                isSignedIn={!!authUser} hasSelectedAddress={!!selectedDeliveryAddress}
+                selectedAddressHasLocation={selectedAddressHasLocation} money={money}
+              />
+            </main>
           )}
-            </>
-          )}
-        </main>
+        </>
       </div>
     );
   }
@@ -1395,7 +1304,7 @@ function App() {
           {!menu.isTableQr && <button className="orders-link" onClick={() => window.location.assign("/")}>Restoranlar</button>}
           <button className={view === "menu" ? "orders-link current" : "orders-link"} onClick={() => navigateView("menu")}>Menü</button>
           <button className={view === "orders" ? "orders-link current" : "orders-link"} onClick={() => navigateView("orders")}>Siparişlerim</button>
-          <button className={view === "profile" ? "orders-link current" : "orders-link"} onClick={() => navigateView("profile")}>Bilgilerim</button>
+          <button className={view === "profile" || view === "addresses" ? "orders-link current" : "orders-link"} onClick={() => navigateView("profile")}>Bilgilerim</button>
           <div className="table-pill"><span /> {menu.isTableQr ? `Masa ${menu.table}` : "Eve sipariş"}</div>
         </div>
       </header>
@@ -1418,8 +1327,8 @@ function App() {
           <span>Siparişlerim</span>
         </button>
         <button
-          className={view === "profile" ? "bottom-nav-item active" : "bottom-nav-item"}
-          aria-current={view === "profile" ? "page" : undefined}
+          className={view === "profile" || view === "addresses" ? "bottom-nav-item active" : "bottom-nav-item"}
+          aria-current={view === "profile" || view === "addresses" ? "page" : undefined}
           onClick={() => navigateView("profile")}
         >
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.25" /><path d="M5.5 20a6.5 6.5 0 0 1 13 0" /></svg>
@@ -1427,298 +1336,47 @@ function App() {
         </button>
       </nav>
 
-      {view === "profile" ? (
-        <main className="profile-page">
-          <div className="profile-heading">
-            <span className="eyebrow">HESAP BİLGİLERİ</span>
-            <h1>Bilgilerim</h1>
-            <p>Telefon ve adres bilgilerinizi, restorana otomatik paylaşımı ve sipariş bildirimlerini yönetin.</p>
-          </div>
-          <section className="profile-card">
-            {!authReady ? (
-              <p className="orders-message"><span className="loader" /> Oturum kontrol ediliyor…</p>
-            ) : !authUser ? (
-              <div className="profile-login">
-                <p>Bilgilerinizi yönetmek için Google veya Apple hesabınızla giriş yapın.</p>
-                <div className="auth-actions">
-                  <button className="primary-button" onClick={() => void signInForOrders("google")}>Google ile giriş yap</button>
-                  <button className="secondary-button" onClick={() => void signInForOrders("apple")}>Apple ile giriş yap</button>
-                </div>
-                {ordersError && <p className="inline-error" role="alert">{ordersError}</p>}
-              </div>
-            ) : profileLoading ? (
-              <p className="orders-message"><span className="loader" /> Profil yükleniyor…</p>
-            ) : (
-              <>
-                <label className="field-label">
-                  Ad soyad
-                  <input type="text" autoComplete="name" maxLength={100} value={contactDraft.name} onChange={(event) => { setProfileSaved(false); setContactDraft((current) => ({ ...current, name: event.target.value })); }} placeholder={authUser.displayName || "Adınız soyadınız"} />
-                </label>
-                <label className="field-label">
-                  Telefon
-                  <input type="tel" autoComplete="tel" maxLength={40} value={contactDraft.phone} onChange={(event) => { setProfileSaved(false); setContactDraft((current) => ({ ...current, phone: event.target.value })); }} placeholder="05xx xxx xx xx" />
-                </label>
-                <section className="saved-addresses" aria-labelledby="saved-addresses-title">
-                  <div className="saved-addresses-heading">
-                    <div>
-                      <strong id="saved-addresses-title">Teslimat adreslerim</strong>
-                      <small>Adreslerinizi hesabınızda saklayın ve siparişte seçin.</small>
-                    </div>
-                    <span>{contactDraft.addresses.length}/{MAX_SAVED_ADDRESSES}</span>
-                  </div>
-                  {contactDraft.addresses.map((entry, index) => {
-                    const addressId = entry.id ?? `legacy-address-${index}`;
-                    const expanded = expandedAddressId === addressId;
-                    const hasLocation = Number.isFinite(entry.latitude) && Number.isFinite(entry.longitude);
-                    return (
-                      <article className="saved-address-card" key={addressId}>
-                      <div className="saved-address-card-heading">
-                        <button
-                          type="button"
-                          className="saved-address-summary"
-                          aria-expanded={expanded}
-                          onClick={() => setExpandedAddressId(expanded ? null : addressId)}
-                        >
-                          <span className="saved-address-title">
-                            <strong>{entry.label || `Adres ${index + 1}`}</strong>
-                            {entry.isDefault && <small>Varsayılan</small>}
-                          </span>
-                          <span className="saved-address-preview">{entry.address || "Açık adres ekleyin"}</span>
-                          <span className={hasLocation ? "saved-address-location saved" : "saved-address-location"}>
-                            {hasLocation ? "Konum kayıtlı" : "Konum eklenmedi"}
-                          </span>
-                        </button>
-                        <div className="saved-address-actions">
-                          <button
-                            type="button"
-                            className="text-button edit-address-button"
-                            aria-label={`${entry.label || `Adres ${index + 1}`} adresini ${expanded ? "kapat" : "düzenle"}`}
-                            onClick={() => setExpandedAddressId(expanded ? null : addressId)}
-                          >
-                            {expanded ? "Kapat" : "Düzenle"}
-                          </button>
-                          <button type="button" className="text-button" onClick={() => removeContactAddress(index)}>Sil</button>
-                        </div>
-                      </div>
-                      {expanded && <div className="saved-address-fields">
-                        <label className="field-label">
-                          Adres etiketi
-                          <input
-                            type="text"
-                            maxLength={60}
-                            value={entry.label}
-                            onChange={(event) => updateContactAddress(index, { label: event.target.value })}
-                            placeholder="Ev, İş"
-                          />
-                        </label>
-                        <label className="field-label">
-                          Açık adres
-                          <textarea
-                            autoComplete="street-address"
-                            maxLength={300}
-                            value={entry.address}
-                            onChange={(event) => updateContactAddress(index, { address: event.target.value })}
-                            placeholder="Mahalle, cadde, bina ve daire bilgisi"
-                          />
-                        </label>
-                        <div className="address-location-settings">
-                          <button
-                            type="button"
-                            className="secondary-button"
-                            disabled={addressLocationBusy !== null || profileSaving}
-                            onClick={() => void saveAddressLocation(index)}
-                          >
-                            {addressLocationBusy === index
-                              ? "Konum alınıyor…"
-                              : hasLocation
-                                ? "Konumu güncelle"
-                                : "Bu adresin konumunu kaydet"}
-                          </button>
-                          <small>
-                            {hasLocation
-                              ? `Konum kayıtlı (${entry.latitude!.toFixed(5)}, ${entry.longitude!.toFixed(5)})`
-                              : "Bu adresteyken konumu kaydedin. Sonraki siparişlerde yeniden GPS izni gerekmez."}
-                          </small>
-                        </div>
-                        <label className="default-address-choice">
-                          <input
-                            type="radio"
-                            name="default-delivery-address"
-                            checked={entry.isDefault}
-                            onChange={() => setDefaultContactAddress(index)}
-                          />
-                          Varsayılan adres
-                        </label>
-                      </div>}
-                      </article>
-                    );
-                  })}
-                  <button
-                    type="button"
-                    className="secondary-button add-address-button"
-                    disabled={contactDraft.addresses.length >= MAX_SAVED_ADDRESSES}
-                    onClick={addContactAddress}
-                  >
-                    + Adres ekle
-                  </button>
-                </section>
-                <label className="share-contact-check">
-                  <input
-                    type="checkbox"
-                    checked={contactDraft.shareWithRestaurant}
-                    onChange={(event) => { setProfileSaved(false); setContactDraft((current) => ({ ...current, shareWithRestaurant: event.target.checked })); }}
-                  />
-                  <span>
-                    <strong>Ad, telefon ve seçtiğim adresi siparişlerimde otomatik paylaş</strong>
-                    <small>Restoran siparişi onayladığında bu bilgilerle eşleşen müşteri kaydı güncellenir. Paylaşımı istediğiniz zaman kapatabilirsiniz.</small>
-                  </span>
-                </label>
-                <section className="notification-settings profile-notification-settings">
-                  <div>
-                    <strong>Bildirim ayarları</strong>
-                    <p>Bu cihazda sipariş onay, iptal ve ödeme bildirimlerini açıp kapatın.</p>
-                  </div>
-                  <button className="secondary-button" disabled={pushBusy} onClick={() => void toggleOrderNotifications()}>
-                    {pushBusy ? "Kaydediliyor…" : pushRegistered ? "Bildirimleri kapat" : "Bildirimleri aç"}
-                  </button>
-                  {pushMessage && <p className="profile-saved" role="status">{pushMessage}</p>}
-                  {pushError && <p className="inline-error" role="alert">{pushError}</p>}
-                </section>
-                <p className="profile-privacy-copy">Adresleriniz ve kaydettiğiniz konumlar hesabınızda saklanır. Siparişte yalnızca seçtiğiniz adres paylaşılır; kayıtlı konum yol ücretini hesaplamak için kullanılır, restorana gönderilmez ve siparişe ayrıca kaydedilmez. Restoranda daha önce kaydedilmiş bilgiler paylaşımı kapatınca silinmez.</p>
-                {(profileError || actionError) && <p className="inline-error" role="alert">{profileError || actionError}</p>}
-                {profileSaved && <p className="profile-saved" role="status">Bilgileriniz güvenli profilinize kaydedildi.</p>}
-                <div className="profile-actions">
-                  <button className="primary-button" disabled={profileLoading || profileSaving} onClick={() => void saveContactProfile()}>{profileSaving ? "Kaydediliyor…" : "Kaydet"}</button>
-                </div>
-              </>
-            )}
-          </section>
-          {authUser && (
-            <section className="profile-session-actions">
-              <p>Bu cihazdaki QR oturumunuzu kapatabilirsiniz.</p>
-              <button className="secondary-button" onClick={() => void signOutProfile()}>Çıkış yap</button>
-            </section>
-          )}
-        </main>
+      {view === "addresses" ? (
+        <AddressBookPage
+          authReady={authReady} user={authUser} loading={profileLoading} saving={profileSaving}
+          saved={profileSaved} ordersError={ordersError} profileError={profileError} actionError={actionError}
+          addresses={contactDraft.addresses} expandedAddressId={expandedAddressId}
+          locationBusyIndex={addressLocationBusy} maxAddresses={MAX_SAVED_ADDRESSES}
+          onBack={() => navigateView("profile")} onLogin={(provider) => void signInForOrders(provider)}
+          onToggleAddress={(id) => setExpandedAddressId((current) => current === id ? null : id)}
+          onUpdateAddress={updateContactAddress} onSaveLocation={(index) => void saveAddressLocation(index)}
+          onSetDefaultAddress={setDefaultContactAddress} onRemoveAddress={removeContactAddress}
+          onAddAddress={addContactAddress} onSave={() => void saveContactProfile()}
+        />
+      ) : view === "profile" ? (
+        <ProfilePage
+          authReady={authReady} user={authUser} loading={profileLoading} ordersError={ordersError}
+          draft={contactDraft} profileError={profileError} actionError={actionError}
+          saved={profileSaved} saving={profileSaving} pushRegistered={pushRegistered}
+          pushBusy={pushBusy} pushMessage={pushMessage} pushError={pushError}
+          onLogin={(provider) => void signInForOrders(provider)}
+          onChange={(field, value) => {
+            setProfileSaved(false);
+            setContactDraft((current) => field === "name" ? { ...current, name: String(value) }
+              : field === "phone" ? { ...current, phone: String(value) }
+                : { ...current, shareWithRestaurant: Boolean(value) });
+          }}
+          onOpenAddresses={() => navigateView("addresses")}
+          onToggleNotifications={() => void toggleOrderNotifications()}
+          onSave={() => void saveContactProfile()} onSignOut={() => void signOutProfile()}
+        />
       ) : view === "orders" ? (
-        <main className="orders-page">
-          {!selectedOrderId && <div className="orders-heading">
-            <span className="eyebrow">HESAP GEÇMİŞİ</span>
-            <h1>Siparişlerim</h1>
-            <p>QR Menü hesabınızla verdiğiniz siparişleri ve tutar bilgilerini buradan takip edebilirsiniz.</p>
-          </div>}
-          {!authUser ? (
-            <section className="orders-login">
-              <p>Siparişlerinizi görmek için Google veya Apple hesabınızla giriş yapın.</p>
-              <div className="auth-actions">
-                <button className="primary-button" onClick={() => void signInForOrders("google")}>Google ile giriş yap</button>
-                <button className="secondary-button" onClick={() => void signInForOrders("apple")}>Apple ile giriş yap</button>
-              </div>
-            </section>
-          ) : ordersLoading && orders.length === 0 ? (
-            <p className="orders-message"><span className="loader" /> Siparişler yükleniyor…</p>
-          ) : selectedOrderId ? (
-            selectedOrder
-              ? renderOrderDetails(selectedOrder, menu.shop)
-              : <div className="order-detail-missing"><p>Bu sipariş bulunamadı veya artık bu hesapla görüntülenemiyor.</p><button className="secondary-button" onClick={openOrdersList}>Siparişlerime dön</button></div>
-          ) : orders.length === 0 ? (
-            <p className="orders-message">Bu hesapla verilmiş QR siparişi bulunamadı.</p>
-          ) : <div className="orders-list">
-            {orders.map((order) => renderOrderSummary(order, menu.shop))}
-          </div>}
-          {feeResponseMessage && <p className="profile-saved" role="status">{feeResponseMessage}</p>}
-          {ordersError && <p className="inline-error" role="alert">{ordersError}</p>}
-        </main>
-      ) : <main>
-        <section className="menu-section" aria-label="Menü">
-          {!menu.isTableQr && (menu.address || menu.phone || (menu.deliveryEnabled && menu.deliveryMinimumOrder > 0)) && (
-            <div className="restaurant-contact">
-              {menu.address && <span>{menu.address}</span>}
-              {menu.phone && <a href={`tel:${menu.phone.replace(/[^\d+]/g, "")}`}>{menu.phone}</a>}
-              {menu.deliveryEnabled && menu.deliveryMinimumOrder > 0 && <span>Minimum sipariş {money.format(menu.deliveryMinimumOrder)}</span>}
-            </div>
-          )}
-          {!menu.isTableQr && menu.deliveryAcceptingOrders === false && (
-            <div className="delivery-paused-notice" role="status">
-              Restoran şu anda yoğun. Online eve siparişi geçici olarak kapalı; menüyü inceleyebilirsiniz.
-            </div>
-          )}
-          <div className="menu-heading">
-            <div>
-              <span className="eyebrow">BUGÜN SİZİN İÇİN</span>
-              <h2>Menüyü keşfet</h2>
-            </div>
-            <label className="search-box">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8" /><path d="m16 16 5 5" /></svg>
-              <input
-                aria-label="Ürün ara"
-                placeholder="Bir lezzet arayın"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </label>
-          </div>
-
-          <nav className="category-nav" aria-label="Menü kategorileri">
-            <button
-              className={categoryId === "all" ? "category-chip active" : "category-chip"}
-              onClick={() => setCategoryId("all")}
-            >Tümü</button>
-            {categories.map((category) => (
-              <button
-                key={category.id}
-                className={categoryId === category.id ? "category-chip active" : "category-chip"}
-                onClick={() => setCategoryId(category.id)}
-              >{category.name}</button>
-            ))}
-          </nav>
-
-          {visibleCategories.length === 0 ? (
-            <div className="empty-search"><span>⌕</span><p>Aramanızla eşleşen ürün bulamadık.</p></div>
-          ) : visibleCategories.map((category) => (
-            <section className="category-section" key={category.id}>
-              <div className="category-title">
-                <h3>{category.name}</h3>
-                <span>{category.products.length} ürün</span>
-              </div>
-              <div className="product-grid">
-                {category.products.map((product) => (
-                  <article className={product.soldOut ? "product-card sold-out" : "product-card"} key={product.id}>
-                    <button
-                      className="product-main"
-                      onClick={() => !product.soldOut && openProduct(product)}
-                      disabled={product.soldOut}
-                    >
-                      {product.imageUrl ? (
-                        <img className="product-image" src={product.imageUrl} alt="" loading="lazy" />
-                      ) : (
-                        <span className="product-image product-image-placeholder" aria-hidden="true">
-                          <svg viewBox="0 0 48 48"><path d="M8 28c0-9 7-16 16-16s16 7 16 16v5H8z" /><path d="M13 21c-3-4-1-8 2-10m18 10c3-4 1-8-2-10" /><path d="M7 35h34" /></svg>
-                        </span>
-                      )}
-                      <span className="product-copy">
-                        <span className="product-name">{product.name}</span>
-                        {product.description && <span className="product-description">{product.description}</span>}
-                        <span className="product-meta">
-                          <strong>{money.format(product.price)}</strong>
-                          {product.groups.length > 0 && <span>Seçenekli</span>}
-                          {product.isMenu && <span>Menü seçmeli</span>}
-                          {product.soldOut && <span className="sold-label">Tükendi</span>}
-                        </span>
-                      </span>
-                    </button>
-                    {!product.soldOut && (
-                      <button className="add-button" onClick={() => openProduct(product)} aria-label={`${product.name} ekle`}>
-                        <span>+</span>
-                      </button>
-                    )}
-                  </article>
-                ))}
-              </div>
-            </section>
-          ))}
-        </section>
-      </main>}
+        <OrderHistoryPage
+          scope="restaurant" user={authUser} authReady={authReady} loading={ordersLoading}
+          orders={orders} selectedOrderId={selectedOrderId} selectedOrder={selectedOrder}
+          ordersError={ordersError} feeResponseMessage={feeResponseMessage}
+          onLogin={(provider) => void signInForOrders(provider)} onBack={openOrdersList}
+          renderOrderSummary={(order) => renderOrderSummary(order, menu.shop)}
+          renderOrderDetails={(order) => renderOrderDetails(order, menu.shop)}
+        />
+      ) : <MenuPage menu={menu} categories={categories} visibleCategories={visibleCategories}
+        categoryId={categoryId} query={query} money={money} onQueryChange={setQuery}
+        onCategoryChange={setCategoryId} onOpenProduct={openProduct} />}
 
       {view === "menu" && <footer className="page-footer">
         <span>Afiyet olsun</span><span>Mobilkod QR Menü</span>

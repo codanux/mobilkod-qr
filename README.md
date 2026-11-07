@@ -17,7 +17,8 @@ değişiklikleri [POS Cloud](../pos-cloud/README.md) projesinde yapılır.
 
 | Sorumluluk | Uygulama |
 |---|---|
-| UI, sepet, Firebase Google/Apple oturumu | `src/App.tsx` |
+| Yönlendirme, uygulama durumu, sepet ve Firebase oturumu | `src/App.tsx` |
+| Dizin, menü, profil, adres ve sipariş geçmişi sayfaları | `src/pages/` |
 | Stil ve responsive düzen | `src/App.css` |
 | API origin | `VITE_API_BASE_URL`; boşsa göreli `/m` istekleri |
 | Geliştirme proxy | `vite.config.ts`; `/m/*` → `QR_API_PROXY_TARGET` |
@@ -28,8 +29,9 @@ değişiklikleri [POS Cloud](../pos-cloud/README.md) projesinde yapılır.
 - Restoran dizini/teslimat menüsü: `/` → `/restaurant/:tenantId` →
   `GET /m/restaurants/:tenantId/menu`.
 - Menü yolu sonuna `/orders` veya `/profile` eklenerek sipariş geçmişi ve
-  profil açılır. `/orders` dizin kökünde giriş yapmış kullanıcının restoranlar
-  arası geçmişidir.
+  profil açılır. Adres yönetimi `/profile/addresses` sayfasındadır.
+  `/orders` dizin kökünde giriş yapmış kullanıcının restoranlar arası
+  geçmişidir.
 - Eve teslimat siparişi için profil bilgileri ve açıkça etkinleştirilmiş
   otomatik paylaşım gerekir. Online ödeme bu uygulamanın kapsamı dışındadır.
 
