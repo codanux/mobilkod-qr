@@ -159,3 +159,25 @@ test("Worker sitemap ve SPA yanıtlarını middleware üzerinden sunar", async (
     globalThis.fetch = oldFetch;
   }
 });
+
+test("herkese açık veri ve HTML şablonu paralel alınır", async () => {
+  const oldFetch = globalThis.fetch;
+  let fetchStarted = false;
+  let releaseTemplate;
+  globalThis.fetch = async () => {
+    fetchStarted = true;
+    return Response.json(restaurants);
+  };
+  const templateReady = new Promise((resolve) => { releaseTemplate = resolve; });
+  try {
+    const response = onRequest({
+      request: new Request(`${origin}/`),
+      next: () => templateReady,
+    });
+    assert.equal(fetchStarted, true);
+    releaseTemplate(new Response(template, { headers: { "content-type": "text/html" } }));
+    assert.equal((await response).status, 200);
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});

@@ -85,7 +85,9 @@ gitmelidir.
 Middleware dizin ve herkese açık restoran menüleri için Cloud
 API'den sunucuda HTML, sayfaya özel başlık/açıklama, canonical, Open Graph ve
 restoran yapılandırılmış verisi üretir. İlk yanıt herkese açık veriyi içerir;
-istemci aynı veriyi tekrar indirmez. `/robots.txt` ve `/sitemap.xml` canlı
+HTML şablonu ve Cloud verisi paralel alınır, istemci aynı veriyi tekrar indirmez.
+Menü fiyatı ve sipariş durumu güncel kalması için HTML önbelleğe alınmaz.
+`/robots.txt` ve `/sitemap.xml` canlı
 restoran listesinden sunulur. Profil, sipariş, masa QR ve diğer yollar
 `X-Robots-Tag: noindex, nofollow` ile sunulur; bu bir erişim denetimi değildir.
 Workers önizleme alan adları da indekslenmez. Canonical alan adı

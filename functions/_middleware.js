@@ -29,6 +29,10 @@ export async function onRequest(context) {
     }
   }
   const page = route(path);
+  const apiPath = page.type === "directory" ? "/m/restaurants" : page.type === "restaurant" ? `/m/restaurants/${page.id}/menu` : null;
+  const publicDataResult = apiPath
+    ? publicData(apiPath).then((data) => ({ data }), (error) => ({ error }))
+    : null;
   const response = await context.next();
   if (!response.headers.get("content-type")?.includes("text/html")) return response;
   const headers = new Headers(response.headers);
@@ -40,8 +44,10 @@ export async function onRequest(context) {
   }
   if (!response.ok) return response;
   try {
-    const apiPath = page.type === "directory" ? "/m/restaurants" : `/m/restaurants/${page.id}/menu`;
-    const data = await publicData(apiPath);
+    if (!apiPath || !publicDataResult) throw new Error("SEO sayfa yolu geçersiz");
+    const result = await publicDataResult;
+    if ("error" in result) throw result.error;
+    const data = result.data;
     const seo = seoContent(canonicalOrigin, page, data);
     headers.delete("content-encoding");
     headers.delete("last-modified");
