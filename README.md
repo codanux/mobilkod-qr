@@ -98,7 +98,10 @@ verilerini içermez. AI katalog entegrasyonu bulunmadığından `/ai-catalog.jso
 uygulama HTML'i yerine 404 döner.
 Google Fonts stil dosyası ilk boyamayı engellemeden yüklenir; fontlar gelene
 kadar sistem fontu gösterilir. Firebase oturumu başlangıçta kontrol edilir,
-ancak giriş iframe'i yalnızca kullanıcı popup ile giriş yaptığında başlatılır.
+ancak Firebase kodu ayrı bir parçadan asenkron yüklenir ve giriş iframe'i
+yalnızca kullanıcı popup ile giriş yaptığında başlatılır. Ana stil dosyası,
+stilsiz içerik ve yerleşim kaymasını önlemek için oluşturmayı engellemeye
+devam eder.
 
 Restoran sayfasında herkese açık restoran adresi, ürün adları ve menüde
 gösterilen taban fiyatlar HTML'de yer alır. `Restaurant` yapılandırılmış

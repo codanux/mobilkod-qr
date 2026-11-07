@@ -1,18 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  browserLocalPersistence,
-  browserPopupRedirectResolver,
-  GoogleAuthProvider,
-  onAuthStateChanged,
-  OAuthProvider,
-  setPersistence,
-  signOut,
-  signInWithPopup,
-  type User,
-} from "firebase/auth";
+import type { Auth, User } from "firebase/auth";
 import { clearSession, customerRequest, getAccessToken, request } from "./api";
 import { firebaseConfig } from "./firebase-config";
-import { getFirebaseApp, getFirebaseAuth } from "./firebase";
 import { AddressBookPage } from "./pages/AddressBookPage";
 import { BottomNav } from "./pages/BottomNav";
 import { MenuPage } from "./pages/MenuPage";
@@ -225,6 +214,7 @@ function App() {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(() => getOrderDetailId());
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [auth, setAuth] = useState<Auth | null>(null);
   const [dataNoticeOpen, setDataNoticeOpen] = useState(false);
   const [dataNoticeChecked, setDataNoticeChecked] = useState(false);
   const [pendingOrderProvider, setPendingOrderProvider] = useState<"google" | "apple" | null>(null);
@@ -253,7 +243,6 @@ function App() {
   const [addressSavingId, setAddressSavingId] = useState<string | null>(null);
   const [savedAddressId, setSavedAddressId] = useState<string | null>(null);
   const productDialogScroll = useRef<HTMLDivElement>(null);
-  const auth = useMemo(() => getFirebaseAuth(), []);
   const orderType = menu?.isTableQr ? "DINE_IN" : "DELIVERY";
 
   const getPushMessaging = useCallback(async () => {
@@ -264,6 +253,7 @@ function App() {
     if (!("serviceWorker" in navigator) || !(await isSupported())) {
       throw new Error("Bu tarayıcı push bildirimlerini desteklemiyor.");
     }
+    const { getFirebaseApp } = await import("./firebase");
     const app = getFirebaseApp();
     const messaging = getMessaging(app);
     const workerConfig = {
@@ -454,16 +444,20 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!auth) return;
     let active = true;
     let unsubscribe: (() => void) | undefined;
-    void setPersistence(auth, browserLocalPersistence)
-      .then(() => {
-        if (active) unsubscribe = onAuthStateChanged(auth, (user) => {
-          if (!user) clearSession();
-          setAuthUser(user);
-          setAuthReady(true);
-        });
+    void import("./firebase")
+      .then(async ({ getFirebaseAuth, browserLocalPersistence, onAuthStateChanged, setPersistence }) => {
+        const instance = getFirebaseAuth();
+        await setPersistence(instance, browserLocalPersistence);
+        if (active) {
+          setAuth(instance);
+          unsubscribe = onAuthStateChanged(instance, (user) => {
+            if (!user) clearSession();
+            setAuthUser(user);
+            setAuthReady(true);
+          });
+        }
       })
       .catch((error: unknown) => {
         if (active) {
@@ -475,7 +469,7 @@ function App() {
       active = false;
       unsubscribe?.();
     };
-  }, [auth]);
+  }, []);
 
   useEffect(() => {
     if (!authUser || typeof Notification === "undefined" || Notification.permission !== "granted") return;
@@ -502,6 +496,8 @@ function App() {
     void import("firebase/messaging").then(async ({ isSupported, getMessaging, onMessage }) => {
       const supported = await isSupported();
       if (!supported || !active) return;
+      const { getFirebaseApp } = await import("./firebase");
+      if (!active) return;
       const app = getFirebaseApp();
       unsubscribe = onMessage(getMessaging(app), (payload) => {
         if (active) setPushMessage(payload.notification?.body ?? "Siparişinizin durumu güncellendi.");
@@ -1032,7 +1028,9 @@ function App() {
           throw new Error("Seçili adres için yol ücreti hesaplanamadı. Adres konumunu kontrol edin.");
         }
       }
-      const currentAuth = getFirebaseAuth();
+      if (!auth) throw new Error("Oturum başlatılamadı. Sayfayı yenileyip tekrar deneyin.");
+      const { browserLocalPersistence, browserPopupRedirectResolver, GoogleAuthProvider, OAuthProvider, setPersistence, signInWithPopup } = await import("./firebase");
+      const currentAuth = auth;
       const provider =
         providerName === "google"
           ? new GoogleAuthProvider()
@@ -1077,11 +1075,15 @@ function App() {
   }
 
   async function signInForOrders(providerName: "google" | "apple") {
-    if (!auth) return;
+    if (!auth) {
+      setOrdersError("Oturum başlatılamadı. Sayfayı yenileyip tekrar deneyin.");
+      return;
+    }
     setOrdersError("");
-    const provider = providerName === "google" ? new GoogleAuthProvider() : new OAuthProvider("apple.com");
-    if (providerName === "apple") provider.addScope("name");
     try {
+      const { browserLocalPersistence, browserPopupRedirectResolver, GoogleAuthProvider, OAuthProvider, setPersistence, signInWithPopup } = await import("./firebase");
+      const provider = providerName === "google" ? new GoogleAuthProvider() : new OAuthProvider("apple.com");
+      if (providerName === "apple") provider.addScope("name");
       await setPersistence(auth, browserLocalPersistence);
       const user = auth.currentUser ?? (await signInWithPopup(auth, provider, browserPopupRedirectResolver)).user;
       await getAccessToken(user); // Firebase yalnızca burada: sunucu oturumu alınır
@@ -1106,6 +1108,7 @@ function App() {
         }
         await deleteToken(messaging);
       }
+      const { signOut } = await import("./firebase");
       await signOut(auth);
       clearSession();
       setPushRegistered(false);
@@ -1315,7 +1318,7 @@ function App() {
       <div className="app-shell restaurant-directory">
         <header className="topbar">
           <a className="brand" href="/" aria-label="QR Menü restoranları">
-            <span className="brand-mark">M</span>
+            <img className="brand-icon" src="/favicon.svg?v=2" alt="" width="40" height="40" />
             <span className="brand-copy"><strong>Mobilkod</strong><small>QR MENÜ</small></span>
           </a>
           <div className="topbar-actions">
@@ -1432,7 +1435,7 @@ function App() {
           event.preventDefault();
           navigateView("menu");
         }}>
-          <span className="brand-mark">{menu.shop.trim().charAt(0).toLocaleUpperCase("tr-TR") || "M"}</span>
+          <img className="brand-icon" src="/favicon.svg?v=2" alt="" width="40" height="40" />
           <span className="brand-copy">
             <strong>{menu.shop}</strong>
             <small>QR MENÜ</small>
