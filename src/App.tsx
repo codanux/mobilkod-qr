@@ -420,8 +420,6 @@ function App() {
       .then(() => {
         if (active) unsubscribe = onAuthStateChanged(auth, (user) => {
           if (!user) clearSession();
-          if (!user) clearSession();
-          if (!user) clearSession();
           setAuthUser(user);
           setAuthReady(true);
         });
