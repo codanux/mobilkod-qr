@@ -9,17 +9,11 @@ import {
   signInWithPopup,
   type User,
 } from "firebase/auth";
-import {
-  deleteToken,
-  getMessaging,
-  getToken,
-  isSupported,
-  onMessage,
-} from "firebase/messaging";
 import { clearSession, customerRequest, getAccessToken, request } from "./api";
 import { firebaseConfig } from "./firebase-config";
 import { getFirebaseApp, getFirebaseAuth } from "./firebase";
 import { AddressBookPage } from "./pages/AddressBookPage";
+import { BottomNav } from "./pages/BottomNav";
 import { MenuPage } from "./pages/MenuPage";
 import { OrderHistoryPage } from "./pages/OrderHistoryPage";
 import { ProfilePage } from "./pages/ProfilePage";
@@ -28,6 +22,18 @@ import type { CartLine, ContactAddress, ContactProfile, CustomerOrder, MenuRespo
 import "./App.css";
 
 const MAX_SAVED_ADDRESSES = 10;
+
+function initialPublicData(path: string): unknown {
+  const element = document.getElementById("qr-public-data");
+  if (!element?.textContent) return undefined;
+  try {
+    const payload: unknown = JSON.parse(element.textContent);
+    if (payload && typeof payload === "object" && "path" in payload && payload.path === path && "data" in payload) return payload.data;
+  } catch (error) {
+    console.error("Başlangıç verisi okunamadı:", error);
+  }
+  return undefined;
+}
 
 function emptyContactProfile(): ContactProfile {
   return { name: "", phone: "", address: "", addresses: [], shareWithRestaurant: false };
@@ -194,9 +200,12 @@ function App() {
   const menuApiPath = token
     ? `/m/${encodeURIComponent(token)}`
     : restaurantId ? `/m/restaurants/${encodeURIComponent(restaurantId)}` : null;
-  const [menu, setMenu] = useState<MenuResponse | null>(null);
-  const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
-  const [restaurantsLoading, setRestaurantsLoading] = useState(false);
+  const bootstrap = useMemo(() => initialPublicData(menuApiPath ? `${menuApiPath}/menu` : "/m/restaurants"), [menuApiPath]);
+  const initialMenu = menuApiPath && bootstrap && typeof bootstrap === "object" && "categories" in bootstrap ? bootstrap as MenuResponse : null;
+  const initialRestaurants = !menuApiPath && bootstrap && typeof bootstrap === "object" && "restaurants" in bootstrap && Array.isArray(bootstrap.restaurants) ? bootstrap.restaurants as Restaurant[] : null;
+  const [menu, setMenu] = useState<MenuResponse | null>(initialMenu);
+  const [restaurants, setRestaurants] = useState<Restaurant[]>(initialRestaurants ?? []);
+  const [restaurantsLoading, setRestaurantsLoading] = useState(!menuApiPath && !initialRestaurants);
   const [loadError, setLoadError] = useState("");
   const [query, setQuery] = useState("");
   const [categoryId, setCategoryId] = useState("all");
@@ -247,6 +256,7 @@ function App() {
   const orderType = menu?.isTableQr ? "DINE_IN" : "DELIVERY";
 
   const getPushMessaging = useCallback(async () => {
+    const { isSupported, getMessaging } = await import("firebase/messaging");
     if (!firebaseConfig.vapidKey || !firebaseConfig.messagingSenderId) {
       throw new Error("Push bildirimleri için Firebase Messaging Sender ID ve VAPID anahtarı QR Menu'de yapılandırılmalı.");
     }
@@ -290,6 +300,7 @@ function App() {
             : "Bildirim izni verilmedi.");
         }
       }
+      const { getToken, deleteToken } = await import("firebase/messaging");
       const { messaging, registration } = await getPushMessaging();
       if (pushRegistered) {
         const token = await getToken(messaging, { vapidKey: firebaseConfig.vapidKey, serviceWorkerRegistration: registration });
@@ -327,6 +338,7 @@ function App() {
     if (next === "profile" || next === "addresses") setContactDraft(contactProfile);
     setSelectedOrderId(null);
     setView(next);
+    window.scrollTo(0, 0);
   }
 
   function navigateOrderDetail(orderId: string) {
@@ -341,7 +353,6 @@ function App() {
 
   function openOrdersList() {
     navigateView("orders");
-    window.scrollTo(0, 0);
   }
 
   function selectDeliveryAddress(addressId: string) {
@@ -358,6 +369,7 @@ function App() {
     let active = true;
     setLoadError("");
     if (!menuApiPath) {
+      if (initialRestaurants) return;
       setRestaurantsLoading(true);
       request<{ restaurants: Restaurant[] }>("/m/restaurants")
         .then(({ restaurants: rows }) => {
@@ -371,7 +383,7 @@ function App() {
         });
       return () => { active = false; };
     }
-    request<MenuResponse>(`${menuApiPath}/menu`)
+    (initialMenu ? Promise.resolve(initialMenu) : request<MenuResponse>(`${menuApiPath}/menu`))
       .then((data) => {
         if (!active) return;
         setMenu(data);
@@ -389,7 +401,7 @@ function App() {
     return () => {
       active = false;
     };
-  }, [menuApiPath]);
+  }, [menuApiPath, initialMenu, initialRestaurants]);
 
   useEffect(() => {
     if ((!menu && menuApiPath) || !authUser) return;
@@ -425,12 +437,19 @@ function App() {
   }, [authUser, menu, menuApiPath]);
 
   useEffect(() => {
+    const previousScrollRestoration = window.history.scrollRestoration;
+    window.history.scrollRestoration = "manual";
+    window.scrollTo(0, 0);
     const onPopState = () => {
       setSelectedOrderId(getOrderDetailId());
       setView(isOrdersPath() ? "orders" : isAddressesPath() ? "addresses" : isProfilePath() ? "profile" : "menu");
+      window.scrollTo(0, 0);
     };
     window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+      window.history.scrollRestoration = previousScrollRestoration;
+    };
   }, []);
 
   useEffect(() => {
@@ -462,6 +481,7 @@ function App() {
     let active = true;
     void (async () => {
       try {
+        const { getToken } = await import("firebase/messaging");
         const { messaging, registration } = await getPushMessaging();
         const token = await getToken(messaging, { vapidKey: firebaseConfig.vapidKey, serviceWorkerRegistration: registration });
         if (!token) throw new Error("Firebase push token'ı alınamadı.");
@@ -478,7 +498,8 @@ function App() {
     if (!authUser || !pushRegistered) return;
     let active = true;
     let unsubscribe: (() => void) | undefined;
-    void isSupported().then((supported) => {
+    void import("firebase/messaging").then(async ({ isSupported, getMessaging, onMessage }) => {
+      const supported = await isSupported();
       if (!supported || !active) return;
       const app = getFirebaseApp();
       unsubscribe = onMessage(getMessaging(app), (payload) => {
@@ -494,13 +515,21 @@ function App() {
   }, [authUser, pushRegistered]);
 
   useEffect(() => {
-    if (menu) document.title = `${menu.shop} · QR Menü`;
-  }, [menu]);
+    const publicPage = view === "menu" && !token;
+    document.title = view === "menu" ? menu ? `${menu.shop} Menü ve Online Sipariş | Mobilkod` : "Restoranlar ve online menüler | Mobilkod"
+      : `${view === "orders" ? "Siparişlerim" : view === "addresses" ? "Teslimat adreslerim" : "Bilgilerim"} | Mobilkod`;
+    let robots = document.querySelector<HTMLMetaElement>('meta[name="robots"]');
+    if (!robots) { robots = document.createElement("meta"); robots.name = "robots"; document.head.appendChild(robots); }
+    robots.content = publicPage ? "index, follow" : "noindex, nofollow";
+  }, [menu, view, token]);
 
   useEffect(() => {
     if (view !== "orders" || !authUser) return;
     let active = true;
+    let inFlight = false;
     const load = async () => {
+      if (inFlight) return;
+      inFlight = true;
       try {
         const result = await customerRequest<{ orders: CustomerOrder[] }>(authUser, 
           "/m/account/history/orders", {
@@ -515,14 +544,19 @@ function App() {
           setOrdersError(error instanceof Error ? error.message : "Siparişleriniz alınamadı.");
           setOrdersLoading(false);
         }
+      } finally {
+        inFlight = false;
       }
     };
     setOrdersLoading(true);
     void load();
-    const timer = window.setInterval(() => void load(), 5000);
+    const timer = window.setInterval(() => { if (!document.hidden) void load(); }, 5000);
+    const onVisibilityChange = () => { if (!document.hidden) void load(); };
+    document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       active = false;
       window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [authUser, view]);
 
@@ -1060,6 +1094,7 @@ function App() {
     if (!auth) return;
     try {
       if (pushRegistered && authUser && firebaseConfig) {
+        const { getToken, deleteToken } = await import("firebase/messaging");
         const { messaging, registration } = await getPushMessaging();
         const token = await getToken(messaging, { vapidKey: firebaseConfig.vapidKey!, serviceWorkerRegistration: registration });
         if (token) {
@@ -1320,6 +1355,7 @@ function App() {
             <button className={`orders-link directory-profile-link${view === "profile" || view === "addresses" ? " current" : ""}`} onClick={() => navigateView("profile")}>Bilgilerim</button>
           </div>
         </header>
+        <BottomNav view={view} directory onNavigate={navigateView} />
         <>
           {view === "addresses" ? (
             <AddressBookPage
@@ -1410,32 +1446,7 @@ function App() {
         </div>
       </header>
 
-      <nav className="bottom-nav" aria-label="Ana gezinme">
-        <button
-          className={view === "menu" ? "bottom-nav-item active" : "bottom-nav-item"}
-          aria-current={view === "menu" ? "page" : undefined}
-          onClick={() => navigateView("menu")}
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h6v6H4zm10 0h6v6h-6zM4 15.5h6v4H4zm10 0h6v4h-6z" /></svg>
-          <span>Menü</span>
-        </button>
-        <button
-          className={view === "orders" ? "bottom-nav-item active" : "bottom-nav-item"}
-          aria-current={view === "orders" ? "page" : undefined}
-          onClick={() => navigateView("orders")}
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.75h10a2 2 0 0 1 2 2v14.5l-7-3.5-7 3.5V5.75a2 2 0 0 1 2-2Z" /><path d="M9 8h6m-6 4h6" /></svg>
-          <span>Siparişlerim</span>
-        </button>
-        <button
-          className={view === "profile" || view === "addresses" ? "bottom-nav-item active" : "bottom-nav-item"}
-          aria-current={view === "profile" || view === "addresses" ? "page" : undefined}
-          onClick={() => navigateView("profile")}
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.25" /><path d="M5.5 20a6.5 6.5 0 0 1 13 0" /></svg>
-          <span>Bilgilerim</span>
-        </button>
-      </nav>
+      <BottomNav view={view} onNavigate={navigateView} />
 
       {view === "addresses" ? (
         <AddressBookPage

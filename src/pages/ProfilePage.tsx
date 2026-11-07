@@ -1,5 +1,6 @@
 import type { User } from "firebase/auth";
 import type { ContactProfile } from "../types";
+import { AddressIcon } from "./AddressIcon";
 
 type Props = {
   authReady: boolean;
@@ -28,6 +29,7 @@ export function ProfilePage({
   pushRegistered, pushBusy, pushMessage, pushError, onLogin, onChange, onOpenAddresses,
   onToggleNotifications, onSave, onSignOut,
 }: Props) {
+  const defaultAddress = draft.addresses.find((address) => address.isDefault) ?? draft.addresses[0];
   return (
     <main className="profile-page">
       <div className="profile-heading">
@@ -62,21 +64,24 @@ export function ProfilePage({
               <input type="tel" autoComplete="tel" maxLength={40} value={draft.phone}
                 onChange={(event) => onChange("phone", event.target.value)} placeholder="05xx xxx xx xx" />
             </label>
-            <section className="saved-addresses">
-              <div className="saved-addresses-heading">
-                <div>
-                  <strong>Teslimat adreslerim</strong>
-                  <small>{draft.addresses.length} kayıtlı adres</small>
+            <section className="profile-address-card" aria-labelledby="profile-address-title">
+              <div className="profile-address-top">
+                <span className="address-icon"><AddressIcon /></span>
+                <div className="profile-address-heading">
+                  <strong id="profile-address-title">Teslimat adreslerim</strong>
+                  <span>{draft.addresses.length} kayıtlı adres</span>
                 </div>
-                <button type="button" className="text-button" onClick={onOpenAddresses}>Adresleri yönet →</button>
               </div>
-              {draft.addresses.length > 0 && (
-                <p className="saved-address-preview">
-                  {draft.addresses.find((address) => address.isDefault)?.label || draft.addresses[0].label || "Varsayılan adres"}
-                  {" · "}
-                  {draft.addresses.find((address) => address.isDefault)?.address || draft.addresses[0].address}
-                </p>
-              )}
+              {defaultAddress ? <div className="profile-address-preview">
+                <div className="saved-address-title">
+                  <strong>{defaultAddress.label || "Adres"}</strong>
+                  {defaultAddress.isDefault && <small>Varsayılan</small>}
+                </div>
+                <p>{defaultAddress.address || "Açık adres ekleyin"}</p>
+              </div> : <p className="profile-address-empty">Henüz kayıtlı adresiniz yok. Teslimat için bir adres ekleyin.</p>}
+              <button type="button" className="profile-address-link" onClick={onOpenAddresses}>
+                {defaultAddress ? "Adresleri yönet" : "Adres ekle"} <span aria-hidden="true">→</span>
+              </button>
             </section>
             <label className="share-contact-check">
               <input type="checkbox" checked={draft.shareWithRestaurant}

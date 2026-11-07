@@ -1,5 +1,6 @@
 import type { User } from "firebase/auth";
 import type { ContactAddress } from "../types";
+import { AddressIcon } from "./AddressIcon";
 
 type Props = {
   authReady: boolean;
@@ -62,8 +63,12 @@ export function AddressBookPage({
                   <strong id="saved-address-manager-title">Kayıtlı adresler</strong>
                   <small>En fazla {maxAddresses} adres ekleyebilirsiniz.</small>
                 </div>
-                <span>{addresses.length}/{maxAddresses}</span>
+                <span className="address-count">{addresses.length}/{maxAddresses}</span>
               </div>
+              {addresses.length === 0 && <div className="address-empty">
+                <span className="address-icon"><AddressIcon /></span>
+                <div><strong>Henüz adres eklenmedi</strong><p>Teslimat için ilk adresinizi ekleyin.</p></div>
+              </div>}
               {addresses.map((entry, index) => {
                 const id = entry.id ?? `legacy-address-${index}`;
                 const expanded = expandedAddressId === id;
@@ -73,13 +78,16 @@ export function AddressBookPage({
                     <div className="saved-address-card-heading">
                       <button type="button" className="saved-address-summary" aria-expanded={expanded}
                         onClick={() => onToggleAddress(id)}>
-                        <span className="saved-address-title">
-                          <strong>{entry.label || `Adres ${index + 1}`}</strong>
-                          {entry.isDefault && <small>Varsayılan</small>}
-                        </span>
-                        <span className="saved-address-preview">{entry.address || "Açık adres ekleyin"}</span>
-                        <span className={hasLocation ? "saved-address-location saved" : "saved-address-location"}>
-                          {hasLocation ? "Konum kayıtlı" : "Konum eklenmedi"}
+                        <span className="address-icon"><AddressIcon /></span>
+                        <span className="saved-address-content">
+                          <span className="saved-address-title">
+                            <strong>{entry.label || `Adres ${index + 1}`}</strong>
+                            {entry.isDefault && <small>Varsayılan</small>}
+                          </span>
+                          <span className="saved-address-preview">{entry.address || "Açık adres ekleyin"}</span>
+                          <span className={hasLocation ? "saved-address-location saved" : "saved-address-location"}>
+                            {hasLocation ? "Konum kayıtlı" : "Konum eklenmedi"}
+                          </span>
                         </span>
                       </button>
                       <div className="saved-address-actions">

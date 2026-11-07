@@ -54,6 +54,7 @@ menü snapshot'ı çalışır durumda olmalıdır.
 ```sh
 npm run lint
 npm run build
+npm test
 npm run preview
 ```
 
@@ -75,6 +76,39 @@ deploy edilmelidir. `.env.production` production endpoint dışında secret
 içermemelidir. `dist/` içeriği HTTPS ve SPA fallback ile `/`, `/<tableToken>`,
 `/restaurant/:tenantId`, `/orders` ve `/profile` yolları `index.html`'e
 gitmelidir.
+
+### SEO ve Cloudflare Pages Functions
+
+`functions/_middleware.js`, dizin ve herkese açık restoran menüleri için Cloud
+API'den sunucuda HTML, sayfaya özel başlık/açıklama, canonical, Open Graph ve
+restoran yapılandırılmış verisi üretir. İlk yanıt herkese açık veriyi içerir;
+istemci aynı veriyi tekrar indirmez. `/robots.txt` ve `/sitemap.xml` canlı
+restoran listesinden sunulur. Profil, sipariş, masa QR ve diğer yollar
+`X-Robots-Tag: noindex, nofollow` ile sunulur; bu bir erişim denetimi değildir.
+Pages önizleme alan adları da indekslenmez. Canonical alan adı
+`https://qr.mobilkod.com`, sunucu API adresi `https://pos.mobilkod.com` olarak
+tanımlıdır; alan adları değişirse middleware güncellenmelidir.
+
+Restoran sayfasında herkese açık restoran adresi, ürün adları ve menüde
+gösterilen taban fiyatlar HTML'de yer alır. `Restaurant` yapılandırılmış
+verisi adresi ve `Menu`/`MenuSection`/`MenuItem` bilgilerini içerir; sabit
+fiyatlı ürünlerde TRY fiyatı ve tükenme durumu `Offer` olarak eklenir.
+Seçenekli ürünlerin ve bileşen seçilen menülerin nihai fiyatı değişebileceği
+için bu kalemlere sabit fiyat teklifi eklenmez. Adres eksikse konum tahmin
+edilmez; müşteri adresleri ve konumları bu SEO verisine dahil edilmez.
+Arama motorlarında gösterim veya fiyatların zengin sonuç olarak görünmesi
+garanti değildir.
+
+Pages Functions çalışacak şekilde Git entegrasyonu veya Functions destekleyen
+Wrangler dağıtımı kullanın; yalnız `dist/` statik dosyalarının yüklenmesi
+sunucu taraflı SEO'yu çalıştırmaz. `public/_routes.json` statik dosyaları
+Function çağrısından hariç tutar. API hatasında indekslenebilir sayfalar ve
+site haritası 503 döner, 404 restoran 404 döner; hata gizlenmez. Menü ve dizin
+HTML yanıtları güncel ürün ve fiyatlar için önbelleğe alınmaz; site haritası
+en fazla 5 dakika önbelleklenir. Sitemap 50.000 URL'yi
+aşarsa bölünmesi gerekir; mevcut işlev bu durumda açıkça 503 döner.
+`npm run dev` ve `npm run preview` Pages Functions çalıştırmaz;
+üretim benzeri doğrulamada Pages Functions destekli yerel ortam kullanın.
 
 POS Cloud'da `QR_MENU_URL=https://qr.mobilkod.com` ayarlayın. Cloud bu origin'e
 CORS izni verir ve masa QR linklerini frontend'e yönlendirir. Firebase
@@ -175,10 +209,11 @@ kuralları [POS Cloud API referansında](../pos-cloud/README.md#qr-menü-apisi).
   teslimat ücreti ve kesin toplam POS tarafından onayda belirlenir.
 - POS teslimat ücretini tahminden yükseltirse müşteri sipariş geçmişinde yeni
   ücreti kabul edebilir veya siparişi iptal edebilir. Yanıt gelmediğinde
-  sipariş otomatik iptal olmaz; personel müşteriyi arayıp kararı POS'tan
-  kaydedebilir.
+  sipariş otomatik iptal olmaz. Kabul edilen yeni teklifler POS'ta otomatik
+  işlenir; yerel fiyat veya ürün doğrulaması başarısızsa personel kontrolü gerekir.
 - Sipariş önce Cloud'da `PENDING` olur; kasaya aktarılır, personel onaylar veya
-  reddeder. Onay gerçek POS adisyonu oluşturur; müşteri geçmişi Cloud'dan
+  reddeder; restoran isterse masa ve teslimat için ayrı otomatik onay açabilir.
+  Onay gerçek POS adisyonu oluşturur; müşteri geçmişi Cloud'dan
   durum ve son tutarı alır.
 - Müşteri sipariş geçmişinden tarayıcı bildirimini ayrıca açabilir. Cloud,
   sipariş onay/iptal/ödeme durumunda FCM bildirimi gönderir; teslimat ücreti

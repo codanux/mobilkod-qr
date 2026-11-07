@@ -20,11 +20,11 @@ function MenuPageView({
   return (
     <main>
       <section className="menu-section" aria-label="Menü">
-        {!menu.isTableQr && (menu.address || menu.phone || (menu.deliveryEnabled && menu.deliveryMinimumOrder > 0)) && (
+        <h1 className="sr-only">{menu.shop} menüsü</h1>
+        {!menu.isTableQr && (menu.address || menu.phone) && (
           <div className="restaurant-contact">
             {menu.address && <span>{menu.address}</span>}
             {menu.phone && <a href={`tel:${menu.phone.replace(/[^\d+]/g, "")}`}>{menu.phone}</a>}
-            {menu.deliveryEnabled && menu.deliveryMinimumOrder > 0 && <span>Minimum sipariş {money.format(menu.deliveryMinimumOrder)}</span>}
           </div>
         )}
         {!menu.isTableQr && menu.deliveryAcceptingOrders === false && (
@@ -33,10 +33,6 @@ function MenuPageView({
           </div>
         )}
         <div className="menu-heading">
-          <div>
-            <span className="eyebrow">BUGÜN SİZİN İÇİN</span>
-            <h2>Menüyü keşfet</h2>
-          </div>
           <label className="search-box">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8" /><path d="m16 16 5 5" /></svg>
             <input aria-label="Ürün ara" placeholder="Bir lezzet arayın" value={query}
@@ -54,18 +50,18 @@ function MenuPageView({
         </nav>
         {visibleCategories.length === 0 ? (
           <div className="empty-search"><span>⌕</span><p>Aramanızla eşleşen ürün bulamadık.</p></div>
-        ) : visibleCategories.map((category) => (
+        ) : visibleCategories.map((category, categoryIndex) => (
           <section className="category-section" key={category.id}>
             <div className="category-title">
-              <h3>{category.name}</h3>
+              <h2>{category.name}</h2>
               <span>{category.products.length} ürün</span>
             </div>
             <div className="product-grid">
-              {category.products.map((product) => (
+              {category.products.map((product, productIndex) => (
                 <article className={product.soldOut ? "product-card sold-out" : "product-card"} key={product.id}>
                   <button className="product-main" onClick={() => !product.soldOut && onOpenProduct(product)} disabled={product.soldOut}>
                     {product.imageUrl ? (
-                      <img className="product-image" src={product.imageUrl} alt="" loading="lazy" />
+                      <img className="product-image" src={product.imageUrl} alt="" loading={categoryIndex === 0 && productIndex < 2 ? "eager" : "lazy"} fetchPriority={categoryIndex === 0 && productIndex === 0 ? "high" : "auto"} width="78" height="78" decoding="async" />
                     ) : (
                       <span className="product-image product-image-placeholder" aria-hidden="true">
                         <svg viewBox="0 0 48 48"><path d="M8 28c0-9 7-16 16-16s16 7 16 16v5H8z" /><path d="M13 21c-3-4-1-8 2-10m18 10c3-4 1-8-2-10" /><path d="M7 35h34" /></svg>
