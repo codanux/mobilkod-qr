@@ -93,9 +93,9 @@ Token Google veya Apple üzerinden Firebase Authentication'dan alınır.
 
 | Method ve path | Auth | İstek / yanıt |
 |---|---|---|
-| `GET /m/restaurants` | Public | `{restaurants}`; yalnız QR ve teslimata açık, menüsü yayınlanmış restoranlar; restoran başına `deliveryMinimumOrder` |
+| `GET /m/restaurants` | Public | `{restaurants}`; yalnız QR ve teslimata açık, menüsü yayınlanmış restoranlar; restoran başına `deliveryMinimumOrder` ve `deliveryAcceptingOrders` |
 | `GET /m/:tableToken/menu` | Public | Restoran/masa bilgisi, `categories` ve QR/teslimat ayarları; `deliveryMinimumOrder` |
-| `GET /m/restaurants/:tenantId/menu` | Public | Aynı menu response; `table:null`, `isTableQr:false` |
+| `GET /m/restaurants/:tenantId/menu` | Public | Aynı menu response; `table:null`, `isTableQr:false`, `deliveryAcceptingOrders` |
 | `GET /m/profile/current` | Firebase Bearer | `{profile:null}` veya `{profile:{name,phone,address,shareWithRestaurant}}` |
 | `PUT /m/profile/current` | Firebase Bearer | Gönderilen profil alanlarını kaydeder, `{profile}` döner |
 | `PUT /m/notifications/token` | Firebase Bearer | Push izni verilen tarayıcının FCM token'ını hesaba bağlar |
@@ -108,7 +108,8 @@ Token Google veya Apple üzerinden Firebase Authentication'dan alınır.
 | `GET /m/account/history/orders` | Firebase Bearer | Hesap sahibinin son 100 restoranlar arası QR siparişi |
 
 Profil uçları en fazla 10 kayıtlı teslimat adresi döndürür ve kaydeder:
-`addresses:[{id,label,address,isDefault}]`. Eski `address` alanı varsayılan
+`addresses:[{id,label,address,latitude,longitude,isDefault}]`. Enlem/boylam
+opsiyoneldir ve birlikte ayarlanmalıdır. Eski `address` alanı varsayılan
 adresle uyumluluk için korunur.
 
 Sipariş request body:
@@ -131,21 +132,24 @@ Sipariş request body:
 
 `orderType` masada `DINE_IN`, restoran menüsünde `DELIVERY` olmalıdır.
 `items` 1–40 satır, her `quantity` 1–20 aralığındadır; `sessionId` UUID'dir.
+Restoran yoğunluk nedeniyle online teslimatı geçici kapatabilir. Bu durumda
+menü görüntülenmeye devam eder, yeni `DELIVERY` siparişleri `409` ile reddedilir;
+masa QR siparişleri ve daha önce alınan siparişler etkilenmez.
 Teslimat siparişinde `deliveryAddressId` seçilen kayıtlı adresi belirtir.
-Profildeki adresler hesapta saklanır; yalnızca seçilen adres siparişle
-restorana iletilir.
+Profildeki adresler ve adres eklerken kaydedilen `latitude`/`longitude`
+hesapta saklanır; yalnızca seçilen adres siparişle restorana iletilir.
 İstemci fiyat/ara toplam göndermez. Cloud menü snapshot'ından tahmini tutarı
 hesaplar, POS kasası onay sırasında kendi veritabanından fiyatı tekrar hesaplar.
 `id` UUID alanı tekrar gönderimi idempotent yapmak için opsiyoneldir.
-Km bazlı teslimat siparişi ayrıca
-`"customerLocation":{"latitude":41.01,"longitude":28.97}` içerir. Konum her
-sipariş sırasında istenir; Cloud restoran koordinatlarıyla Haversine mesafesini
-hesaplar ve km ücretini kuruşa yuvarlar. GPS koordinatları müşteri profiline
-veya sipariş kaydına yazılmaz. Konum izni alınamazsa teslimat siparişi
-gönderilmez.
+Km bazlı teslimat ücretinde seçilen adresin kayıtlı konumu kullanılır; müşteri
+sipariş anında orada bulunmak veya yeniden GPS izni vermek zorunda değildir.
+Cloud restoran koordinatlarıyla Haversine mesafesini hesaplar ve km ücretini
+kuruşa yuvarlar. Adres koordinatları profil hesabında saklanır, siparişe veya
+restorana aktarılmaz. Eski istemciler geriye uyumluluk için
+`"customerLocation":{"latitude":41.01,"longitude":28.97}` gönderebilir.
 
 Profil PUT gövdesi:
-`{"name":"…","phone":"…","addresses":[{"id":"UUID","label":"Ev","address":"…","isDefault":true}],"shareWithRestaurant":false}`.
+`{"name":"…","phone":"…","addresses":[{"id":"UUID","label":"Ev","address":"…","latitude":40.99,"longitude":29.02,"isDefault":true}],"shareWithRestaurant":false}`.
 Restorana yalnız `shareWithRestaurant` açıkken seçilen adres ve telefon
 gönderilir. Eski istemcilerdeki tek `address` alanı varsayılan adres olarak
 desteklenir.
@@ -175,8 +179,10 @@ kuralları [POS Cloud API referansında](../pos-cloud/README.md#qr-menü-apisi).
   Admin service-account credential gerekir.
 - Profil, kayıtlı adresler ve sipariş geçmişi Firebase UID'ye bağlıdır.
   Kullanıcı farklı cihazlarda aynı Firebase hesabıyla giriş yaparsa
-  adreslerine ve geçmişine erişebilir. Km ücreti için cihaz GPS'i her siparişte
-  anlık kullanılır; GPS koordinatları kaydedilmez.
+  adreslerine ve geçmişine erişebilir. Km ücreti için adres konumu adres
+  kaydedilirken eklenir; sipariş anında müşterinin GPS'i gerekmez.
+- Sipariş bildirimleri tercihi QR Menü'nün `Bilgilerim` ayarları altında
+  yönetilir; FCM token bu tarayıcıya ve hesaba bağlanır.
 - Menüdeki restaurant address/phone/delivery fee POS/Cloud ayarlarından gelir;
   frontend bunları değiştirmez. Teslimat minimumu ürün ara toplamına uygulanır,
   teslimat ücreti bu tutara dahil değildir; istemci düşük sepeti engeller ve

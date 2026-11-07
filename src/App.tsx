@@ -64,6 +64,7 @@ type MenuResponse = {
   isTableQr: boolean;
   dineInEnabled: boolean;
   deliveryEnabled: boolean;
+  deliveryAcceptingOrders?: boolean;
   deliveryFee: number;
   deliveryPerKm: number | null;
   deliveryMinimumOrder: number;
@@ -71,9 +72,9 @@ type MenuResponse = {
   deliveryOriginLongitude: number | null;
   categories: { id: string; name: string; products: Product[] }[];
 };
-type Restaurant = { id: string; name: string; address: string; phone: string; dineInEnabled: boolean; deliveryEnabled: boolean; deliveryFee: number; deliveryPerKm: number | null; deliveryMinimumOrder: number };
+type Restaurant = { id: string; name: string; address: string; phone: string; dineInEnabled: boolean; deliveryEnabled: boolean; deliveryAcceptingOrders?: boolean; deliveryFee: number; deliveryPerKm: number | null; deliveryMinimumOrder: number };
 
-type ContactAddress = { id: string | null; label: string; address: string; isDefault: boolean };
+type ContactAddress = { id: string | null; label: string; address: string; latitude?: number | null; longitude?: number | null; isDefault: boolean };
 type ContactProfile = { name: string; phone: string; address: string; addresses: ContactAddress[]; shareWithRestaurant: boolean };
 const MAX_SAVED_ADDRESSES = 10;
 
@@ -266,7 +267,7 @@ function App() {
   const [productQuantity, setProductQuantity] = useState(1);
   const [productNote, setProductNote] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
-  const [deliveryQuote, setDeliveryQuote] = useState<{ tenantId: string; latitude: number; longitude: number; distanceKm: number; fee: number } | null>(null);
+  const [deliveryQuote, setDeliveryQuote] = useState<{ tenantId: string; addressId: string; latitude: number; longitude: number; distanceKm: number; fee: number } | null>(null);
   const [cartNote, setCartNote] = useState("");
   const [cartOpen, setCartOpen] = useState(false);
   const [lineNoteKey, setLineNoteKey] = useState<string | null>(null);
@@ -298,10 +299,12 @@ function App() {
   const [pushBusy, setPushBusy] = useState(false);
   const [pushMessage, setPushMessage] = useState("");
   const [pushError, setPushError] = useState("");
+  const [addressLocationBusy, setAddressLocationBusy] = useState<number | null>(null);
   const productDialogScroll = useRef<HTMLDivElement>(null);
   const auth = useMemo(() => getFirebaseAuth(), []);
   const orderType = menu?.isTableQr ? "DINE_IN" : "DELIVERY";
-  const activeDeliveryQuote = deliveryQuote?.tenantId === menu?.tenantId ? deliveryQuote : null;
+  const activeDeliveryQuote = deliveryQuote?.tenantId === menu?.tenantId &&
+    deliveryQuote?.addressId === selectedDeliveryAddressId ? deliveryQuote : null;
 
   const getPushMessaging = useCallback(async () => {
     if (!firebaseConfig.vapidKey || !firebaseConfig.messagingSenderId) {
@@ -570,6 +573,9 @@ function App() {
   const deliveryMinimumMet = menu?.isTableQr !== false || Math.round(total * 100) >= Math.round(deliveryMinimumOrder * 100);
   const count = cart.reduce((sum, line) => sum + line.quantity, 0);
   const selectedDeliveryAddress = contactProfile.addresses.find((address) => (address.id ?? "") === selectedDeliveryAddressId);
+  const selectedAddressHasLocation = Number.isFinite(selectedDeliveryAddress?.latitude) &&
+    Number.isFinite(selectedDeliveryAddress?.longitude);
+  const deliveryLocationReady = menu?.isTableQr !== false || menu?.deliveryPerKm === null || selectedAddressHasLocation;
   const deliveryProfileReady = !!authUser &&
     !profileLoading &&
     contactProfile.shareWithRestaurant &&
@@ -647,6 +653,8 @@ function App() {
       id: entry.id ?? crypto.randomUUID(),
       label: entry.label.trim(),
       address: entry.address.trim(),
+      latitude: entry.latitude ?? null,
+      longitude: entry.longitude ?? null,
       isDefault: entry.isDefault,
     }));
     const profile = {
@@ -698,7 +706,15 @@ function App() {
     setContactDraft((current) => ({
       ...current,
       addresses: current.addresses.map((address, addressIndex) =>
-        addressIndex === index ? { ...address, ...patch } : address,
+        addressIndex === index
+          ? {
+              ...address,
+              ...patch,
+              ...(Object.prototype.hasOwnProperty.call(patch, "address")
+                ? { latitude: null, longitude: null }
+                : {}),
+            }
+          : address,
       ),
     }));
   }
@@ -715,6 +731,22 @@ function App() {
     setProfileSaved(false);
     setContactDraft((current) => ({ ...current, addresses: [...current.addresses, address] }));
     if (isFirst) setSelectedDeliveryAddressId(address.id ?? "");
+  }
+
+  async function saveAddressLocation(index: number) {
+    setAddressLocationBusy(index);
+    setActionError("");
+    try {
+      const position = await getCurrentLocation();
+      updateContactAddress(index, {
+        latitude: Math.round(position.coords.latitude * 1_000_000) / 1_000_000,
+        longitude: Math.round(position.coords.longitude * 1_000_000) / 1_000_000,
+      });
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Adres konumu alınamadı.");
+    } finally {
+      setAddressLocationBusy(null);
+    }
   }
 
   function removeContactAddress(index: number) {
@@ -755,7 +787,7 @@ function App() {
     return new Promise((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(resolve, (error) => {
         const message = error.code === error.PERMISSION_DENIED
-          ? "Teslimat siparişi için konum izni gereklidir."
+          ? "Adres konumunu kaydetmek için tarayıcı konum izni gereklidir."
           : error.code === error.TIMEOUT
             ? "Konum alınamadı. Lütfen tekrar deneyin."
             : "Konum bilgisi alınamadı. Konum servislerini kontrol edin.";
@@ -806,6 +838,10 @@ function App() {
 
   async function submitOrder(providerName: "google" | "apple") {
     if (!menu || !menuApiPath || cart.length === 0) return;
+    if (orderType === "DELIVERY" && menu.deliveryAcceptingOrders === false) {
+      setActionError("Restoran şu anda yoğun. Online eve siparişi geçici olarak kapalı; lütfen daha sonra tekrar deneyin.");
+      return;
+    }
     if (orderType === "DELIVERY" && !deliveryMinimumMet) {
       setActionError(`Teslimat için minimum ürün sepeti tutarı ${money.format(deliveryMinimumOrder)}. Sepetinizi bu tutara tamamlayın.`);
       return;
@@ -821,15 +857,22 @@ function App() {
         if (menu.deliveryPerKm === null || menu.deliveryOriginLatitude === null || menu.deliveryOriginLongitude === null) {
           throw new Error("Restoran teslimat konumunu henüz ayarlamadı.");
         }
-        const position = await getCurrentLocation();
-        const customerLocation = { latitude: position.coords.latitude, longitude: position.coords.longitude };
+        if (!selectedDeliveryAddress ||
+          !Number.isFinite(selectedDeliveryAddress.latitude) ||
+          !Number.isFinite(selectedDeliveryAddress.longitude)) {
+          throw new Error("Seçtiğiniz adresin konumunu Bilgilerim bölümünde kaydedin.");
+        }
+        const customerLocation = {
+          latitude: selectedDeliveryAddress.latitude!,
+          longitude: selectedDeliveryAddress.longitude!,
+        };
         const distance = distanceKm(
           { latitude: menu.deliveryOriginLatitude, longitude: menu.deliveryOriginLongitude },
           customerLocation,
         );
         const fee = Math.round(distance * menu.deliveryPerKm * 100) / 100;
-        setDeliveryQuote({ tenantId: menu.tenantId, ...customerLocation, distanceKm: distance, fee });
-        setActionError(`Konumunuzdan yol ücreti hesaplandı: ${money.format(fee)}. Siparişi göndermek için tekrar dokunun.`);
+        setDeliveryQuote({ tenantId: menu.tenantId, addressId: selectedDeliveryAddressId, ...customerLocation, distanceKm: distance, fee });
+        setActionError(`Kayıtlı adresinizden yol ücreti hesaplandı: ${money.format(fee)}. Siparişi göndermek için tekrar dokunun.`);
         return;
       }
       const currentAuth = getFirebaseAuth();
@@ -851,9 +894,6 @@ function App() {
             sessionId: menu.isTableQr ? tableSessionId : deliverySessionId,
             orderType,
             ...(!menu.isTableQr && selectedDeliveryAddressId && { deliveryAddressId: selectedDeliveryAddressId }),
-            ...(activeDeliveryQuote && {
-              customerLocation: { latitude: activeDeliveryQuote.latitude, longitude: activeDeliveryQuote.longitude },
-            }),
             note: cartNote.trim() || undefined,
             ...(contactProfile.shareWithRestaurant && {
               shareContactDetails: true,
@@ -1156,6 +1196,7 @@ function App() {
                         ? money.format(restaurant.deliveryFee)
                         : `${money.format(restaurant.deliveryPerKm)} / km`}{restaurant.deliveryMinimumOrder > 0 ? ` · Min. sepet ${money.format(restaurant.deliveryMinimumOrder)}` : ""}{restaurant.dineInEnabled ? " · Masa QR" : ""}
                     </small>
+                    {restaurant.deliveryAcceptingOrders === false && <small className="delivery-paused-label">Şu an online eve siparişi alınmıyor.</small>}
                     <small>{[restaurant.address, restaurant.phone].filter(Boolean).join(" · ") || "Menüyü görüntüle · Eve sipariş ver"}</small>
                   </span>
                   <b aria-hidden="true">→</b>
@@ -1297,6 +1338,25 @@ function App() {
                           placeholder="Mahalle, cadde, bina ve daire bilgisi"
                         />
                       </label>
+                      <div className="address-location-settings">
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          disabled={addressLocationBusy !== null || profileSaving}
+                          onClick={() => void saveAddressLocation(index)}
+                        >
+                          {addressLocationBusy === index
+                            ? "Konum alınıyor…"
+                            : Number.isFinite(entry.latitude) && Number.isFinite(entry.longitude)
+                              ? "Konumu güncelle"
+                              : "Bu adresin konumunu kaydet"}
+                        </button>
+                        <small>
+                          {Number.isFinite(entry.latitude) && Number.isFinite(entry.longitude)
+                            ? `Konum kayıtlı (${entry.latitude!.toFixed(5)}, ${entry.longitude!.toFixed(5)})`
+                            : "Bu adresteyken konumu kaydedin. Sonraki siparişlerde yeniden GPS izni gerekmez."}
+                        </small>
+                      </div>
                       <label className="default-address-choice">
                         <input
                           type="radio"
@@ -1328,7 +1388,18 @@ function App() {
                     <small>Restoran siparişi onayladığında bu bilgilerle eşleşen müşteri kaydı güncellenir. Paylaşımı istediğiniz zaman kapatabilirsiniz.</small>
                   </span>
                 </label>
-                <p className="profile-privacy-copy">Adresleriniz hesabınızda bulutta saklanır. Sipariş sırasında yalnızca seçtiğiniz adres paylaşılır. Km bazlı yol ücretinde cihaz konumu her siparişte anlık kullanılır ve kaydedilmez. Restoranda daha önce kaydedilmiş bilgiler paylaşımı kapatınca silinmez.</p>
+                <section className="notification-settings profile-notification-settings">
+                  <div>
+                    <strong>Sipariş bildirimleri</strong>
+                    <p>Onay, iptal ve ödeme durumlarını bu cihazda alın.</p>
+                  </div>
+                  <button className="secondary-button" disabled={pushBusy} onClick={() => void toggleOrderNotifications()}>
+                    {pushBusy ? "Kaydediliyor…" : pushRegistered ? "Bildirimleri kapat" : "Bildirimleri aç"}
+                  </button>
+                  {pushMessage && <p className="profile-saved" role="status">{pushMessage}</p>}
+                  {pushError && <p className="inline-error" role="alert">{pushError}</p>}
+                </section>
+                <p className="profile-privacy-copy">Adresleriniz ve kaydettiğiniz konumlar hesabınızda saklanır. Siparişte yalnızca seçtiğiniz adres paylaşılır; kayıtlı konum yol ücretini hesaplamak için kullanılır, restorana gönderilmez ve siparişe ayrıca kaydedilmez. Restoranda daha önce kaydedilmiş bilgiler paylaşımı kapatınca silinmez.</p>
                 {(profileError || actionError) && <p className="inline-error" role="alert">{profileError || actionError}</p>}
                 {profileSaved && <p className="profile-saved" role="status">Bilgileriniz güvenli profilinize kaydedildi.</p>}
                 <div className="profile-actions">
@@ -1427,6 +1498,11 @@ function App() {
                   ? money.format(menu.deliveryFee)
                   : `${money.format(menu.deliveryPerKm)} / km`}
               </span>}
+            </div>
+          )}
+          {!menu.isTableQr && menu.deliveryAcceptingOrders === false && (
+            <div className="delivery-paused-notice" role="status">
+              Restoran şu anda yoğun. Online eve siparişi geçici olarak kapalı; menüyü inceleyebilirsiniz.
             </div>
           )}
           <div className="menu-heading">
@@ -1651,6 +1727,11 @@ function App() {
               )}
               {cart.length > 0 && (
                 <>
+                  {!menu.isTableQr && menu.deliveryAcceptingOrders === false && (
+                    <div className="delivery-paused-notice" role="status">
+                      Restoran yoğun olduğu için şu anda online teslimat siparişi alamıyor. Daha sonra tekrar deneyin.
+                    </div>
+                  )}
                   {!menu.isTableQr && (
                     <div className="delivery-profile-hint">
                       {profileLoading ? (
@@ -1677,6 +1758,12 @@ function App() {
                       </select>
                     </label>
                   )}
+                  {!menu.isTableQr && menu.deliveryPerKm !== null && !selectedAddressHasLocation && (
+                    <div className="delivery-profile-hint">
+                      <span>Seçtiğiniz adres için konum kaydedilmemiş. Siparişten önce Bilgilerim’de bu adresin konumunu kaydedin.</span>
+                      <button type="button" onClick={() => { setCartOpen(false); navigateView("profile"); }}>Bilgilerime git</button>
+                    </div>
+                  )}
                   <label className="field-label">
                     Sipariş notu
                     <textarea maxLength={200} value={cartNote} onChange={(event) => setCartNote(event.target.value)} placeholder="Restorana iletmek istediğiniz bir not var mı?" />
@@ -1685,7 +1772,7 @@ function App() {
                     <span>{activeDeliveryQuote ? `Yol ücreti (${activeDeliveryQuote.distanceKm.toFixed(2)} km)` : "Yol ücreti"}</span>
                     <strong>{activeDeliveryQuote ? money.format(activeDeliveryQuote.fee) : menu.deliveryPerKm === null
                       ? money.format(menu.deliveryFee)
-                      : `${money.format(menu.deliveryPerKm)} / km · konum alınca hesaplanır`}</strong>
+                      : `${money.format(menu.deliveryPerKm)} / km · kayıtlı adres konumuna göre hesaplanır`}</strong>
                   </div>}
                   <div className="total-row"><span>{menu.isTableQr ? "Toplam" : activeDeliveryQuote || menu.deliveryPerKm === null ? "Tahmini toplam" : "Ürünler toplamı"}</span><strong>{money.format(menu.isTableQr ? total : deliveryTotal)}</strong></div>
                   {!menu.isTableQr && deliveryMinimumOrder > 0 && (
@@ -1702,7 +1789,7 @@ function App() {
                       : "Teslimat ücreti her siparişte mevcut konumunuz ve restoran konumu arasındaki kuş uçuşu mesafeye göre hesaplanır."}</p>
                   {!authReady ? <p className="cart-auth-hint">Oturum kontrol ediliyor…</p> : authUser ? (
                     <div className="cart-auth-ready">
-                      <button className="primary-button" disabled={busy || (!menu.isTableQr && (!deliveryProfileReady || !deliveryMinimumMet))} onClick={() => requestOrder("google")}>
+                      <button className="primary-button" disabled={busy || (!menu.isTableQr && (menu.deliveryAcceptingOrders === false || !deliveryProfileReady || !deliveryMinimumMet || !deliveryLocationReady))} onClick={() => requestOrder("google")}>
                         {busy ? "İşleniyor…" : !menu.isTableQr && menu.deliveryPerKm !== null && !activeDeliveryQuote ? "Yol ücretini hesapla" : "Siparişi ver"}
                       </button>
                     </div>

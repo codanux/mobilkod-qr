@@ -130,6 +130,9 @@
 .saved-address-card { padding:14px;border:1px solid #eeece6;border-radius:12px;background:#faf9f6; }
 .saved-address-card-heading { display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;color:#45433c;font-size:12px; }
 .saved-address-card .field-label { margin:0 0 13px; }.saved-address-card .field-label textarea { min-height:86px; }
+.address-location-settings { display:flex;align-items:center;flex-wrap:wrap;gap:9px;margin:0 0 13px; }
+.address-location-settings .secondary-button { min-height:38px;font-size:11px; }
+.address-location-settings small { color:#858178;font-size:10px;line-height:1.45; }
 .text-button { padding:4px 2px;border:0;background:transparent;color:#a5483d;font-size:11px;font-weight:750; }
 .default-address-choice { display:flex;align-items:center;gap:8px;color:#625f56;font-size:11px;font-weight:650; }.default-address-choice input { accent-color:#856426; }
 .add-address-button { align-self:flex-start;min-height:38px;padding:0 13px; }
@@ -146,6 +149,7 @@
 .notification-settings { display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:0 0 18px;padding:15px 18px;border:1px solid #eeece6;border-radius:16px;background:#fff; }
 .notification-settings > div { display:flex;flex-direction:column;gap:5px; }.notification-settings strong { font-size:13px; }.notification-settings p { margin:0;color:#858178;font-size:12px;line-height:1.5; }
 .notification-settings > p { width:100%;margin:0; }
+.profile-notification-settings { margin:16px 0 0;padding:13px 0 0;border:0;border-top:1px solid #eeece6;border-radius:0;background:transparent; }
 .orders-heading h1 { margin:8px 0;font:800 30px Manrope,sans-serif;letter-spacing:-.8px; }
 .orders-heading p,.orders-message,.orders-login p { color:#858178;font-size:13px;line-height:1.55; }
 .orders-login,.customer-order { padding:18px;border:1px solid #eeece6;border-radius:16px;background:#fff; }
@@ -184,9 +188,11 @@
 .restaurant-card strong { overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px; }
 .restaurant-card small { color:#858178;font-size:10px;line-height:1.4; }
 .restaurant-card .restaurant-order-types { color:#856426;font-weight:700; }
+.restaurant-card .delivery-paused-label { color:#a34235;font-weight:750; }
 .restaurant-card > b { color:#a77b2a;font-size:19px; }
 .restaurant-contact { display:flex;flex-wrap:wrap;gap:6px 14px;margin-bottom:18px;color:#777369;font-size:11px; }
 .restaurant-contact a { color:#856426;font-weight:700;text-decoration:none; }
+.delivery-paused-notice { margin:10px 0;padding:12px 14px;border:1px solid #e8c4bc;border-radius:11px;background:#fff2ef;color:#973d31;font-size:12px;line-height:1.5; }
 .delivery-profile-hint { display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0;padding:11px;border:1px solid #e9e5db;border-radius:11px;background:#faf9f6;color:#625f56;font-size:11px;line-height:1.45; }
 .delivery-profile-hint button { flex:none;border:0;background:transparent;color:#856426;font-size:11px;font-weight:800;text-decoration:underline; }
 
