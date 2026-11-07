@@ -60,12 +60,12 @@ npm run preview
 
 ## Yayın
 
-Cloudflare Pages build ayarları:
+Cloudflare Workers Builds ayarları:
 
 | Ayar | Değer |
 |---|---|
 | Build command | `npm run build` |
-| Build output directory | `dist` |
+| Deploy command | `npx wrangler deploy` |
 | Root directory | QR Menu proje kökü |
 
 Build komutu `vite build --mode production` çalıştırır ve repodaki
@@ -73,21 +73,25 @@ Build komutu `vite build --mode production` çalıştırır ve repodaki
 origin'i, `https://pos.mobilkod.com`). Bu değer frontend bundle'ına gömülür;
 API origin'ini değiştirmek için `.env.production` güncellenip Pages yeniden
 deploy edilmelidir. `.env.production` production endpoint dışında secret
-içermemelidir. `dist/` içeriği HTTPS ve SPA fallback ile `/`, `/<tableToken>`,
+içermemelidir. `wrangler.jsonc` Worker girişini, `dist/` statik dosyalarını ve
+SPA fallback'i yapılandırır. `dist/` içeriği HTTPS ve SPA fallback ile `/`, `/<tableToken>`,
 `/restaurant/:tenantId`, `/orders` ve `/profile` yolları `index.html`'e
 gitmelidir.
 
-### SEO ve Cloudflare Pages Functions
+### SEO ve Cloudflare Worker
 
-`functions/_middleware.js`, dizin ve herkese açık restoran menüleri için Cloud
+`worker/index.js`, `functions/_middleware.js` kodunu Workers üzerinde çalıştırır.
+Middleware dizin ve herkese açık restoran menüleri için Cloud
 API'den sunucuda HTML, sayfaya özel başlık/açıklama, canonical, Open Graph ve
 restoran yapılandırılmış verisi üretir. İlk yanıt herkese açık veriyi içerir;
 istemci aynı veriyi tekrar indirmez. `/robots.txt` ve `/sitemap.xml` canlı
 restoran listesinden sunulur. Profil, sipariş, masa QR ve diğer yollar
 `X-Robots-Tag: noindex, nofollow` ile sunulur; bu bir erişim denetimi değildir.
-Pages önizleme alan adları da indekslenmez. Canonical alan adı
+Workers önizleme alan adları da indekslenmez. Canonical alan adı
 `https://qr.mobilkod.com`, sunucu API adresi `https://pos.mobilkod.com` olarak
 tanımlıdır; alan adları değişirse middleware güncellenmelidir.
+Yayın sonrası `/sitemap.xml` XML, `/robots.txt` düz metin döndürmelidir.
+Cloudflare'ın yönetilen robots.txt ayarı etkinse yanıtı ayrıca kontrol edin.
 
 Restoran sayfasında herkese açık restoran adresi, ürün adları ve menüde
 gösterilen taban fiyatlar HTML'de yer alır. `Restaurant` yapılandırılmış

@@ -17,10 +17,11 @@ export async function onRequest(context) {
   const { request } = context;
   if (request.method !== "GET" && request.method !== "HEAD") return context.next();
   const path = new URL(request.url).pathname;
-  if (path === "/robots.txt") return new Response(`User-agent: *\nAllow: /\nSitemap: ${canonicalOrigin}/sitemap.xml\n`, { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=300" } });
+  if (path === "/robots.txt") return new Response(request.method === "HEAD" ? null : `User-agent: *\nAllow: /\nSitemap: ${canonicalOrigin}/sitemap.xml\n`, { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=300" } });
   if (path === "/sitemap.xml") {
     try {
-      return new Response(sitemap(canonicalOrigin, await publicData("/m/restaurants")), { headers: { "content-type": "application/xml; charset=utf-8", "cache-control": "public, max-age=300" } });
+      const xml = sitemap(canonicalOrigin, await publicData("/m/restaurants"));
+      return new Response(request.method === "HEAD" ? null : xml, { headers: { "content-type": "application/xml; charset=utf-8", "cache-control": "public, max-age=300" } });
     } catch (error) {
       console.error("Site haritası oluşturulamadı", error);
       return new Response("Site haritası geçici olarak kullanılamıyor.", { status: 503, headers: { "cache-control": "no-store" } });

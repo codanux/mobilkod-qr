@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import { route, renderHtml, seoContent, sitemap } from "../seo/seo-utils.js";
 import { onRequest } from "../functions/_middleware.js";
+import worker from "../worker/index.js";
 
 const origin = "https://qr.mobilkod.com";
 const id = "4d7c97bc-8462-4394-aab0-9136c00841b2";
@@ -98,8 +99,12 @@ test("middleware yanıtları indeksleme, hata ve HEAD davranışını korur", as
     assert.equal(await head.text(), "");
     const xml = await call("/sitemap.xml");
     assert.match(await xml.text(), new RegExp(id));
+    const xmlHead = await call("/sitemap.xml", "HEAD");
+    assert.equal(xmlHead.headers.get("content-type"), "application/xml; charset=utf-8");
+    assert.equal(await xmlHead.text(), "");
     const robots = await call("/robots.txt");
     assert.match(await robots.text(), /Sitemap: https:\/\/qr\.mobilkod\.com\/sitemap\.xml/);
+    assert.equal(await (await call("/robots.txt", "HEAD")).text(), "");
     assert.ok(calls.every((url) => url.startsWith("https://pos.mobilkod.com/")));
     globalThis.fetch = async () => new Response("", { status: 404 });
     const originalError = console.error;
@@ -110,6 +115,26 @@ test("middleware yanıtları indeksleme, hata ve HEAD davranışını korur", as
     console.error = () => {};
     try { assert.equal((await call("/")).status, 503); assert.equal((await call("/sitemap.xml")).status, 503); }
     finally { console.error = originalError; }
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
+});
+
+test("Worker sitemap ve SPA yanıtlarını middleware üzerinden sunar", async () => {
+  const oldFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async () => Response.json(restaurants);
+  const env = { ASSETS: { fetch: async (request) => { requests.push(new URL(request.url).pathname); return new Response(template, { headers: { "content-type": "text/html" } }); } } };
+  try {
+    const xml = await worker.fetch(new Request(`${origin}/sitemap.xml`), env);
+    assert.equal(xml.headers.get("content-type"), "application/xml; charset=utf-8");
+    assert.match(await xml.text(), new RegExp(id));
+    assert.deepEqual(requests, []);
+    const home = await worker.fetch(new Request(`${origin}/`), env);
+    assert.match(await home.text(), /Köşe &lt;Restoran&gt;/);
+    const privatePage = await worker.fetch(new Request(`${origin}/profile`), env);
+    assert.equal(privatePage.headers.get("x-robots-tag"), "noindex, nofollow");
+    assert.deepEqual(requests, ["/", "/profile"]);
   } finally {
     globalThis.fetch = oldFetch;
   }
