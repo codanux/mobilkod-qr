@@ -20,6 +20,7 @@ değişiklikleri [POS Cloud](../pos-cloud/README.md) projesinde yapılır.
 | Yönlendirme, uygulama durumu, sepet ve Firebase oturumu | `src/App.tsx` |
 | Dizin, menü, profil, adres ve sipariş geçmişi sayfaları | `src/pages/` |
 | Stil ve responsive düzen | `src/App.css` |
+| Tarayıcı simgesi | `public/favicon.svg` |
 | API origin | `VITE_API_BASE_URL`; boşsa göreli `/m` istekleri |
 | Geliştirme proxy | `vite.config.ts`; `/m/*` → `QR_API_PROXY_TARGET` |
 | Menü, auth token doğrulama, sipariş kaydı | POS Cloud `src/qr/` |
@@ -92,6 +93,9 @@ Workers önizleme alan adları da indekslenmez. Canonical alan adı
 tanımlıdır; alan adları değişirse middleware güncellenmelidir.
 Yayın sonrası `/sitemap.xml` XML, `/robots.txt` düz metin döndürmelidir.
 Cloudflare'ın yönetilen robots.txt ayarı etkinse yanıtı ayrıca kontrol edin.
+`/llms.txt` herkese açık dizini ve site haritasını tanıtır; özel müşteri
+verilerini içermez. AI katalog entegrasyonu bulunmadığından `/ai-catalog.json`
+uygulama HTML'i yerine 404 döner.
 Google Fonts stil dosyası ilk boyamayı engellemeden yüklenir; fontlar gelene
 kadar sistem fontu gösterilir. Firebase oturumu başlangıçta kontrol edilir,
 ancak giriş iframe'i yalnızca kullanıcı popup ile giriş yaptığında başlatılır.

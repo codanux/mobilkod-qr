@@ -17,6 +17,7 @@ export async function onRequest(context) {
   const { request } = context;
   if (request.method !== "GET" && request.method !== "HEAD") return context.next();
   const path = new URL(request.url).pathname;
+  if (path === "/ai-catalog.json") return new Response(null, { status: 404, headers: { "cache-control": "public, max-age=300" } });
   if (path === "/robots.txt") return new Response(request.method === "HEAD" ? null : `User-agent: *\nAllow: /\nSitemap: ${canonicalOrigin}/sitemap.xml\n`, { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=300" } });
   if (path === "/sitemap.xml") {
     try {

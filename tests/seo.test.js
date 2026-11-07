@@ -32,6 +32,13 @@ test("sunucu HTML'i özgün içerik, güvenli metadata ve başlangıç verisi i�
   assert.deepEqual(JSON.parse(embedded[1]).data, menu);
   assert.match(html, /fonts\.googleapis\.com\/css2[^>]+media="print" onload="this\.media='all'"/);
   assert.match(html, /<noscript><link rel="stylesheet" href="https:\/\/fonts\.googleapis\.com/);
+  assert.match(html, /<link rel="icon" href="\/favicon\.svg\?v=2" type="image\/svg\+xml"/);
+});
+
+test("tarayıcı simgesi SVG olarak sunulur", async () => {
+  const icon = await readFile(new URL("../public/favicon.svg", import.meta.url), "utf8");
+  assert.match(icon, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
+  assert.match(icon, /viewBox="0 0 128 128"/);
 });
 
 test("menü ürünleri, sabit fiyatlar ve herkese açık restoran adresi yapılandırılır", () => {
@@ -75,6 +82,12 @@ test("site haritası sadece geçerli restoran bağlantılarını içerir", () =>
   assert.throws(() => sitemap(origin, { restaurants: [{ id: "invalid" }] }));
 });
 
+test("llms.txt herkese açık sayfaları tanımlar", async () => {
+  const text = await readFile(new URL("../public/llms.txt", import.meta.url), "utf8");
+  assert.match(text, /^# Mobilkod QR Menü\n/);
+  assert.match(text, /\[Site haritası\]\(https:\/\/qr\.mobilkod\.com\/sitemap\.xml\)/);
+});
+
 test("middleware yanıtları indeksleme, hata ve HEAD davranışını korur", async () => {
   const oldFetch = globalThis.fetch;
   const calls = [];
@@ -107,6 +120,11 @@ test("middleware yanıtları indeksleme, hata ve HEAD davranışını korur", as
     const robots = await call("/robots.txt");
     assert.match(await robots.text(), /Sitemap: https:\/\/qr\.mobilkod\.com\/sitemap\.xml/);
     assert.equal(await (await call("/robots.txt", "HEAD")).text(), "");
+    for (const method of ["GET", "HEAD"]) {
+      const catalog = await call("/ai-catalog.json", method);
+      assert.equal(catalog.status, 404);
+      assert.equal(await catalog.text(), "");
+    }
     assert.ok(calls.every((url) => url.startsWith("https://pos.mobilkod.com/")));
     globalThis.fetch = async () => new Response("", { status: 404 });
     const originalError = console.error;
