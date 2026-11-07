@@ -640,7 +640,7 @@ function App() {
       tenantId: menu.tenantId,
       addressId: selectedDeliveryAddressId,
       distanceKm: deliveryDistanceKm,
-      fee: Math.round(deliveryDistanceKm * menu.deliveryPerKm * 100) / 100,
+      fee: Math.ceil(deliveryDistanceKm * menu.deliveryPerKm),
     }
     : null;
   const deliveryTotal = total + (menu?.isTableQr ? 0 : activeDeliveryQuote?.fee ?? menu?.deliveryFee ?? 0);

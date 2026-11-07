@@ -150,7 +150,7 @@ hesaplar, POS kasası onay sırasında kendi veritabanından fiyatı tekrar hesa
 Km bazlı teslimat ücretinde seçilen adresin kayıtlı konumu kullanılır; müşteri
 sipariş anında orada bulunmak veya yeniden GPS izni vermek zorunda değildir.
 Cloud restoran koordinatlarıyla Haversine mesafesini hesaplar ve km ücretini
-kuruşa yuvarlar. Adres koordinatları profil hesabında saklanır, siparişe veya
+bir sonraki tam TL'ye yukarı yuvarlar. Adres koordinatları profil hesabında saklanır, siparişe veya
 restorana aktarılmaz. Eski istemciler geriye uyumluluk için
 `"customerLocation":{"latitude":41.01,"longitude":28.97}` gönderebilir.
 
