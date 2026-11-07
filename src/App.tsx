@@ -66,11 +66,12 @@ type MenuResponse = {
   deliveryEnabled: boolean;
   deliveryFee: number;
   deliveryPerKm: number | null;
+  deliveryMinimumOrder: number;
   deliveryOriginLatitude: number | null;
   deliveryOriginLongitude: number | null;
   categories: { id: string; name: string; products: Product[] }[];
 };
-type Restaurant = { id: string; name: string; address: string; phone: string; dineInEnabled: boolean; deliveryEnabled: boolean; deliveryFee: number; deliveryPerKm: number | null };
+type Restaurant = { id: string; name: string; address: string; phone: string; dineInEnabled: boolean; deliveryEnabled: boolean; deliveryFee: number; deliveryPerKm: number | null; deliveryMinimumOrder: number };
 
 type ContactAddress = { id: string | null; label: string; address: string; isDefault: boolean };
 type ContactProfile = { name: string; phone: string; address: string; addresses: ContactAddress[]; shareWithRestaurant: boolean };
@@ -565,6 +566,8 @@ function App() {
 
   const total = cart.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0);
   const deliveryTotal = total + (menu?.isTableQr ? 0 : activeDeliveryQuote?.fee ?? menu?.deliveryFee ?? 0);
+  const deliveryMinimumOrder = menu?.deliveryMinimumOrder ?? 0;
+  const deliveryMinimumMet = menu?.isTableQr !== false || Math.round(total * 100) >= Math.round(deliveryMinimumOrder * 100);
   const count = cart.reduce((sum, line) => sum + line.quantity, 0);
   const selectedDeliveryAddress = contactProfile.addresses.find((address) => (address.id ?? "") === selectedDeliveryAddressId);
   const deliveryProfileReady = !!authUser &&
@@ -803,6 +806,10 @@ function App() {
 
   async function submitOrder(providerName: "google" | "apple") {
     if (!menu || !menuApiPath || cart.length === 0) return;
+    if (orderType === "DELIVERY" && !deliveryMinimumMet) {
+      setActionError(`Teslimat için minimum ürün sepeti tutarı ${money.format(deliveryMinimumOrder)}. Sepetinizi bu tutara tamamlayın.`);
+      return;
+    }
     if (orderType === "DELIVERY" && !deliveryProfileReady) {
       setActionError("Eve teslimat için Bilgilerim bölümünde seçili adres, telefon ve otomatik paylaşım gerekli.");
       return;
@@ -1147,7 +1154,7 @@ function App() {
                     <small className="restaurant-order-types">
                       Eve teslimat · Yol ücreti {restaurant.deliveryPerKm === null
                         ? money.format(restaurant.deliveryFee)
-                        : `${money.format(restaurant.deliveryPerKm)} / km`}{restaurant.dineInEnabled ? " · Masa QR" : ""}
+                        : `${money.format(restaurant.deliveryPerKm)} / km`}{restaurant.deliveryMinimumOrder > 0 ? ` · Min. sepet ${money.format(restaurant.deliveryMinimumOrder)}` : ""}{restaurant.dineInEnabled ? " · Masa QR" : ""}
                     </small>
                     <small>{[restaurant.address, restaurant.phone].filter(Boolean).join(" · ") || "Menüyü görüntüle · Eve sipariş ver"}</small>
                   </span>
@@ -1681,6 +1688,13 @@ function App() {
                       : `${money.format(menu.deliveryPerKm)} / km · konum alınca hesaplanır`}</strong>
                   </div>}
                   <div className="total-row"><span>{menu.isTableQr ? "Toplam" : activeDeliveryQuote || menu.deliveryPerKm === null ? "Tahmini toplam" : "Ürünler toplamı"}</span><strong>{money.format(menu.isTableQr ? total : deliveryTotal)}</strong></div>
+                  {!menu.isTableQr && deliveryMinimumOrder > 0 && (
+                    <p className={deliveryMinimumMet ? "delivery-minimum-hint met" : "delivery-minimum-hint"}>
+                      {deliveryMinimumMet
+                        ? `Minimum sipariş tutarı karşılandı: ${money.format(deliveryMinimumOrder)}`
+                        : `Minimum ürün sepeti ${money.format(deliveryMinimumOrder)}. Sepetinize ${money.format(deliveryMinimumOrder - total)} daha ekleyin.`}
+                    </p>
+                  )}
                   <p className="muted-copy">{menu.isTableQr
                     ? "Masa siparişi restoran onayına gönderilir."
                     : activeDeliveryQuote
@@ -1688,7 +1702,7 @@ function App() {
                       : "Teslimat ücreti her siparişte mevcut konumunuz ve restoran konumu arasındaki kuş uçuşu mesafeye göre hesaplanır."}</p>
                   {!authReady ? <p className="cart-auth-hint">Oturum kontrol ediliyor…</p> : authUser ? (
                     <div className="cart-auth-ready">
-                      <button className="primary-button" disabled={busy || (!menu.isTableQr && !deliveryProfileReady)} onClick={() => requestOrder("google")}>
+                      <button className="primary-button" disabled={busy || (!menu.isTableQr && (!deliveryProfileReady || !deliveryMinimumMet))} onClick={() => requestOrder("google")}>
                         {busy ? "İşleniyor…" : !menu.isTableQr && menu.deliveryPerKm !== null && !activeDeliveryQuote ? "Yol ücretini hesapla" : "Siparişi ver"}
                       </button>
                     </div>

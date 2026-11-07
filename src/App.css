@@ -87,6 +87,8 @@
 .cart-line-copy { min-width:0;display:flex;flex-direction:column;gap:3px; }
 .cart-line-copy strong { font-size:13px; }.cart-line-copy span { color:#88847a;font-size:10px; }.cart-line-copy b { margin-top:3px;color:#a77b2a;font-size:12px; }
 .cart-line-controls { display:flex;justify-content:flex-end; }
+.delivery-minimum-hint { margin:9px 0;padding:10px 12px;border-radius:9px;background:#fbf1e7;color:#8b5528;font-size:11px;line-height:1.45; }
+.delivery-minimum-hint.met { background:#edf5ed;color:#447047; }
 .cart-note-button { align-self:flex-start;padding:2px 0;border:0;background:transparent;color:#88713f;font-size:10px;font-weight:750;text-align:left; }
 .cart-note-button:hover { color:#554522;text-decoration:underline; }
 .cart-line-copy .cart-note-preview { display:-webkit-box;overflow:hidden;color:#77746c;font-size:10px;line-height:1.35;-webkit-line-clamp:1;-webkit-box-orient:vertical; }

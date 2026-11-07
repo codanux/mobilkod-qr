@@ -93,8 +93,8 @@ Token Google veya Apple üzerinden Firebase Authentication'dan alınır.
 
 | Method ve path | Auth | İstek / yanıt |
 |---|---|---|
-| `GET /m/restaurants` | Public | `{restaurants}`; yalnız QR ve teslimata açık, menüsü yayınlanmış restoranlar |
-| `GET /m/:tableToken/menu` | Public | Restoran/masa bilgisi, `categories` ve QR/teslimat ayarları |
+| `GET /m/restaurants` | Public | `{restaurants}`; yalnız QR ve teslimata açık, menüsü yayınlanmış restoranlar; restoran başına `deliveryMinimumOrder` |
+| `GET /m/:tableToken/menu` | Public | Restoran/masa bilgisi, `categories` ve QR/teslimat ayarları; `deliveryMinimumOrder` |
 | `GET /m/restaurants/:tenantId/menu` | Public | Aynı menu response; `table:null`, `isTableQr:false` |
 | `GET /m/profile/current` | Firebase Bearer | `{profile:null}` veya `{profile:{name,phone,address,shareWithRestaurant}}` |
 | `PUT /m/profile/current` | Firebase Bearer | Gönderilen profil alanlarını kaydeder, `{profile}` döner |
@@ -178,8 +178,9 @@ kuralları [POS Cloud API referansında](../pos-cloud/README.md#qr-menü-apisi).
   adreslerine ve geçmişine erişebilir. Km ücreti için cihaz GPS'i her siparişte
   anlık kullanılır; GPS koordinatları kaydedilmez.
 - Menüdeki restaurant address/phone/delivery fee POS/Cloud ayarlarından gelir;
-  frontend bunları değiştirmez. Teslimat bölgesi/minimum sepet tutarı burada
-  tanımlı değildir.
+  frontend bunları değiştirmez. Teslimat minimumu ürün ara toplamına uygulanır,
+  teslimat ücreti bu tutara dahil değildir; istemci düşük sepeti engeller ve
+  Cloud siparişi kabul etmeden önce aynı sınırı sunucu tarafında doğrular.
 
 ## AI agent ve katkı notları
 
