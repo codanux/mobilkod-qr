@@ -7,7 +7,7 @@ Read [README.md](README.md) before changing the frontend.
   belong to `../pos-cloud/`.
 - Treat POS Cloud controller validation and response types as authoritative.
   Update both projects' API documentation when their contract changes.
-- Preserve Firebase ID-token auth for profile/order/history routes. Never
+- Firebase ID token is used only at login (`POST /m/auth/session`); profile/order/history routes use the Cloud-issued session token via `src/api.ts` (`customerRequest`). Never
   store Firebase private credentials or trust browser-provided prices.
 - Keep table QR (`DINE_IN`) and restaurant directory delivery (`DELIVERY`)
   behavior distinct. Maintain route parsing and SPA fallback when adding URLs.

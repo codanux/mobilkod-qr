@@ -1,11 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  getApps,
-  initializeApp,
-} from "firebase/app";
-import {
   browserLocalPersistence,
-  getAuth,
   GoogleAuthProvider,
   onAuthStateChanged,
   OAuthProvider,
@@ -21,7 +16,9 @@ import {
   isSupported,
   onMessage,
 } from "firebase/messaging";
+import { clearSession, customerRequest, getAccessToken, request } from "./api";
 import { firebaseConfig } from "./firebase-config";
+import { getFirebaseApp, getFirebaseAuth } from "./firebase";
 import "./App.css";
 
 type ModifierOption = {
@@ -107,7 +104,6 @@ type CustomerOrder = {
   tableName?: string | null;
 };
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "");
 const money = new Intl.NumberFormat("tr-TR", {
   style: "currency",
   currency: "TRY",
@@ -200,18 +196,6 @@ function getDeliverySessionId(token: string) {
   return id;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: { "content-type": "application/json", ...init?.headers },
-  });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(result.message || "İstek tamamlanamadı.");
-  }
-  return result as T;
-}
-
 function priceFor(product: Product, selected: string[]) {
   let base = product.price;
   let delta = 0;
@@ -276,7 +260,7 @@ function App() {
   const [pushMessage, setPushMessage] = useState("");
   const [pushError, setPushError] = useState("");
   const productDialogScroll = useRef<HTMLDivElement>(null);
-  const auth = useMemo(() => getAuth(getApps()[0] ?? initializeApp(firebaseConfig)), []);
+  const auth = useMemo(() => getFirebaseAuth(), []);
   const orderType = menu?.isTableQr ? "DINE_IN" : "DELIVERY";
 
   const getPushMessaging = useCallback(async () => {
@@ -286,7 +270,7 @@ function App() {
     if (!("serviceWorker" in navigator) || !(await isSupported())) {
       throw new Error("Bu tarayıcı push bildirimlerini desteklemiyor.");
     }
-    const app = getApps()[0] ?? initializeApp(firebaseConfig);
+    const app = getFirebaseApp();
     const messaging = getMessaging(app);
     const workerConfig = {
       apiKey: firebaseConfig.apiKey,
@@ -301,10 +285,8 @@ function App() {
   }, []);
 
   const syncPushToken = useCallback(async (user: User, token: string) => {
-    const idToken = await user.getIdToken();
-    await request("/m/notifications/token", {
+    await customerRequest(user, "/m/notifications/token", {
       method: "PUT",
-      headers: { authorization: `Bearer ${idToken}` },
       body: JSON.stringify({ token }),
     });
   }, []);
@@ -329,10 +311,8 @@ function App() {
       if (pushRegistered) {
         const token = await getToken(messaging, { vapidKey: firebaseConfig.vapidKey, serviceWorkerRegistration: registration });
         if (token) {
-          const idToken = await authUser.getIdToken();
-          await request("/m/notifications/token", {
+          await customerRequest(authUser, "/m/notifications/token", {
             method: "DELETE",
-            headers: { authorization: `Bearer ${idToken}` },
             body: JSON.stringify({ token }),
           });
         }
@@ -404,10 +384,7 @@ function App() {
     let active = true;
     setProfileLoading(true);
     setProfileError("");
-    void authUser.getIdToken()
-      .then((idToken) => request<{ profile: ContactProfile | null }>("/m/profile/current", {
-        headers: { authorization: `Bearer ${idToken}` },
-      }))
+    void customerRequest<{ profile: ContactProfile | null }>(authUser, "/m/profile/current")
       .then(({ profile }) => {
         if (!active) return;
         if (profile) {
@@ -442,6 +419,9 @@ function App() {
     void setPersistence(auth, browserLocalPersistence)
       .then(() => {
         if (active) unsubscribe = onAuthStateChanged(auth, (user) => {
+          if (!user) clearSession();
+          if (!user) clearSession();
+          if (!user) clearSession();
           setAuthUser(user);
           setAuthReady(true);
         });
@@ -481,7 +461,7 @@ function App() {
     let unsubscribe: (() => void) | undefined;
     void isSupported().then((supported) => {
       if (!supported || !active) return;
-      const app = getApps()[0] ?? initializeApp(firebaseConfig);
+      const app = getFirebaseApp();
       unsubscribe = onMessage(getMessaging(app), (payload) => {
         if (active) setPushMessage(payload.notification?.body ?? "Siparişinizin durumu güncellendi.");
       });
@@ -503,10 +483,8 @@ function App() {
     let active = true;
     const load = async () => {
       try {
-        const idToken = await authUser.getIdToken();
-        const result = await request<{ orders: CustomerOrder[] }>(
+        const result = await customerRequest<{ orders: CustomerOrder[] }>(authUser, 
           "/m/account/history/orders", {
-          headers: { authorization: `Bearer ${idToken}` },
         });
         if (active) {
           setOrders(result.orders);
@@ -638,10 +616,8 @@ function App() {
     setProfileSaving(true);
     setProfileSaved(false);
     try {
-      const idToken = await authUser.getIdToken();
-      const result = await request<{ profile: ContactProfile }>("/m/profile/current", {
+      const result = await customerRequest<{ profile: ContactProfile }>(authUser, "/m/profile/current", {
         method: "PUT",
-        headers: { authorization: `Bearer ${idToken}` },
         body: JSON.stringify(profile),
       });
       setContactProfile(result.profile);
@@ -709,7 +685,7 @@ function App() {
     setBusy(true);
     setActionError("");
     try {
-      const currentAuth = getAuth(getApps()[0] ?? initializeApp(firebaseConfig));
+      const currentAuth = getFirebaseAuth();
       const provider =
         providerName === "google"
           ? new GoogleAuthProvider()
@@ -717,13 +693,13 @@ function App() {
       if (providerName === "apple") provider.addScope("name");
       await setPersistence(currentAuth, browserLocalPersistence);
       const user = currentAuth.currentUser ?? (await signInWithPopup(currentAuth, provider)).user;
-      const idToken = await user.getIdToken();
+      await getAccessToken(user);
+      await getAccessToken(user);
       setAuthUser(user);
-      await request<{ id: string }>(
+      await customerRequest<{ id: string }>(user, 
         `${menuApiPath}/orders`,
         {
           method: "POST",
-          headers: { authorization: `Bearer ${idToken}` },
           body: JSON.stringify({
             sessionId: menu.isTableQr ? tableSessionId : deliverySessionId,
             orderType,
@@ -760,6 +736,7 @@ function App() {
     try {
       await setPersistence(auth, browserLocalPersistence);
       const user = auth.currentUser ?? (await signInWithPopup(auth, provider)).user;
+      await getAccessToken(user); // Firebase yalnızca burada: sunucu oturumu alınır
       setAuthUser(user);
     } catch (error) {
       setOrdersError(error instanceof Error ? error.message : "Giriş yapılamadı.");
@@ -773,16 +750,15 @@ function App() {
         const { messaging, registration } = await getPushMessaging();
         const token = await getToken(messaging, { vapidKey: firebaseConfig.vapidKey!, serviceWorkerRegistration: registration });
         if (token) {
-          const idToken = await authUser.getIdToken();
-          await request("/m/notifications/token", {
+          await customerRequest(authUser, "/m/notifications/token", {
             method: "DELETE",
-            headers: { authorization: `Bearer ${idToken}` },
             body: JSON.stringify({ token }),
           });
         }
         await deleteToken(messaging);
       }
       await signOut(auth);
+      clearSession();
       setPushRegistered(false);
       setPushMessage("");
       setPushError("");
