@@ -92,6 +92,9 @@ Workers önizleme alan adları da indekslenmez. Canonical alan adı
 tanımlıdır; alan adları değişirse middleware güncellenmelidir.
 Yayın sonrası `/sitemap.xml` XML, `/robots.txt` düz metin döndürmelidir.
 Cloudflare'ın yönetilen robots.txt ayarı etkinse yanıtı ayrıca kontrol edin.
+Google Fonts stil dosyası ilk boyamayı engellemeden yüklenir; fontlar gelene
+kadar sistem fontu gösterilir. Firebase oturumu başlangıçta kontrol edilir,
+ancak giriş iframe'i yalnızca kullanıcı popup ile giriş yaptığında başlatılır.
 
 Restoran sayfasında herkese açık restoran adresi, ürün adları ve menüde
 gösterilen taban fiyatlar HTML'de yer alır. `Restaurant` yapılandırılmış

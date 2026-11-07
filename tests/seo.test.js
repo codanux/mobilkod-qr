@@ -30,6 +30,8 @@ test("sunucu HTML'i özgün içerik, güvenli metadata ve başlangıç verisi i�
   assert.ok(!html.includes("</script><script>alert"));
   const embedded = html.match(/<script id="qr-public-data" type="application\/json">(.*?)<\/script>/);
   assert.deepEqual(JSON.parse(embedded[1]).data, menu);
+  assert.match(html, /fonts\.googleapis\.com\/css2[^>]+media="print" onload="this\.media='all'"/);
+  assert.match(html, /<noscript><link rel="stylesheet" href="https:\/\/fonts\.googleapis\.com/);
 });
 
 test("menü ürünleri, sabit fiyatlar ve herkese açık restoran adresi yapılandırılır", () => {

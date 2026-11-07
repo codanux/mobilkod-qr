@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   browserLocalPersistence,
+  browserPopupRedirectResolver,
   GoogleAuthProvider,
   onAuthStateChanged,
   OAuthProvider,
@@ -1038,7 +1039,7 @@ function App() {
           : new OAuthProvider("apple.com");
       if (providerName === "apple") provider.addScope("name");
       await setPersistence(currentAuth, browserLocalPersistence);
-      const user = currentAuth.currentUser ?? (await signInWithPopup(currentAuth, provider)).user;
+      const user = currentAuth.currentUser ?? (await signInWithPopup(currentAuth, provider, browserPopupRedirectResolver)).user;
       await getAccessToken(user);
       await getAccessToken(user);
       setAuthUser(user);
@@ -1082,7 +1083,7 @@ function App() {
     if (providerName === "apple") provider.addScope("name");
     try {
       await setPersistence(auth, browserLocalPersistence);
-      const user = auth.currentUser ?? (await signInWithPopup(auth, provider)).user;
+      const user = auth.currentUser ?? (await signInWithPopup(auth, provider, browserPopupRedirectResolver)).user;
       await getAccessToken(user); // Firebase yalnızca burada: sunucu oturumu alınır
       setAuthUser(user);
     } catch (error) {
