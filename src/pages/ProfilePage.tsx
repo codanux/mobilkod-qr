@@ -1,5 +1,6 @@
 import type { User } from "firebase/auth";
 import type { ContactProfile } from "../types";
+import { getDeviceNotificationInfo } from "../utils/notificationGuide";
 import { AddressIcon } from "./AddressIcon";
 
 type Props = {
@@ -101,6 +102,22 @@ export function ProfilePage({
               </button>
               {pushMessage && <p className="profile-saved" role="status">{pushMessage}</p>}
               {pushError && <p className="inline-error" role="alert">{pushError}</p>}
+              {!pushRegistered && (() => {
+                const guide = getDeviceNotificationInfo();
+                if (pushError || guide.permission === "denied" || (guide.isIOS && !guide.isStandalone)) {
+                  return (
+                    <div className="notification-device-guide">
+                      <strong>{guide.guideTitle}</strong>
+                      <ol>
+                        {guide.guideSteps.map((step, idx) => (
+                          <li key={idx}>{step}</li>
+                        ))}
+                      </ol>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
             </section>
             <p className="profile-privacy-copy">Adresleriniz hesabınızda saklanır. Siparişte yalnızca seçtiğiniz adres paylaşılır; kayıtlı konum yol ücretini hesaplamak için kullanılır, restorana gönderilmez.</p>
             {(profileError || actionError) && <p className="inline-error" role="alert">{profileError || actionError}</p>}

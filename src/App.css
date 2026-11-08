@@ -181,6 +181,10 @@
 .notification-settings > div { display:flex;flex-direction:column;gap:5px; }.notification-settings strong { font-size:13px; }.notification-settings p { margin:0;color:#858178;font-size:12px;line-height:1.5; }
 .notification-settings > p { width:100%;margin:0; }
 .profile-notification-settings { margin:16px 0 0;padding:13px 0 0;border:0;border-top:1px solid #eeece6;border-radius:0;background:transparent; }
+.notification-device-guide { width:100%;margin-top:10px;padding:12px 14px;background:#fbf9f4;border:1px solid #e5dfd2;border-radius:12px;font-size:12px;color:#555044;box-sizing:border-box; }
+.notification-device-guide strong { display:block;font-size:13px;color:#282720;margin-bottom:6px; }
+.notification-device-guide ol { margin:0;padding-left:18px;line-height:1.6; }
+.notification-device-guide li { margin-bottom:4px; }
 .orders-heading h1 { margin:8px 0;font:800 30px Manrope,sans-serif;letter-spacing:-.8px; }
 .orders-heading p,.orders-message,.orders-login p { color:#858178;font-size:13px;line-height:1.55; }
 .orders-login,.customer-order { padding:18px;border:1px solid #eeece6;border-radius:16px;background:#fff; }

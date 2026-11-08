@@ -9,6 +9,7 @@ import { OrderHistoryPage } from "./pages/OrderHistoryPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { RestaurantDirectoryPage } from "./pages/RestaurantDirectoryPage";
 import type { CartLine, ContactAddress, ContactProfile, CustomerOrder, MenuResponse, Product, Restaurant } from "./types";
+import { getDeviceNotificationInfo } from "./utils/notificationGuide";
 import "./App.css";
 
 const MAX_SAVED_ADDRESSES = 10;
@@ -282,12 +283,16 @@ function App() {
     setPushMessage("");
     try {
       if (!pushRegistered) {
+        const deviceInfo = getDeviceNotificationInfo();
+        if (deviceInfo.isIOS && !deviceInfo.isStandalone) {
+          throw new Error("iPhone'da bildirimler için siteyi Safari ile açıp 'Ana Ekrana Ekle' yapmanız gerekir.");
+        }
         if (typeof Notification === "undefined") throw new Error("Bu tarayıcı push bildirimlerini desteklemiyor.");
         let permission = Notification.permission;
         if (permission === "default") permission = await Notification.requestPermission();
         if (permission !== "granted") {
           throw new Error(permission === "denied"
-            ? "Bildirim izni kapalı. Tarayıcı ayarlarından QR Menü bildirimlerine izin verin."
+            ? "Bildirim izni kapalı. Aşağıdaki yönlendirmeyi takip ederek izin verebilirsiniz."
             : "Bildirim izni verilmedi.");
         }
       }
