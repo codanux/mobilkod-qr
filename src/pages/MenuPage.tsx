@@ -21,7 +21,7 @@ function MenuPageView({
     <main>
       <section className="menu-section" aria-label="Menü">
         <h1 className="sr-only">{menu.shop} menüsü</h1>
-        {!menu.isTableQr && (menu.address || menu.phone) && (
+        {(menu.address || menu.phone) && (
           <div className="restaurant-contact">
             {menu.address && <span>{menu.address}</span>}
             {menu.phone && <a href={`tel:${menu.phone.replace(/[^\d+]/g, "")}`}>{menu.phone}</a>}

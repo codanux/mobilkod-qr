@@ -447,12 +447,10 @@ function App() {
     let active = true;
     let unsubscribe: (() => void) | undefined;
     void import("./firebase")
-      .then(async ({ getFirebaseAuth, browserLocalPersistence, onAuthStateChanged, setPersistence }) => {
-        const instance = getFirebaseAuth();
-        await setPersistence(instance, browserLocalPersistence);
+      .then(({ auth: firebaseAuth, onAuthStateChanged }) => {
         if (active) {
-          setAuth(instance);
-          unsubscribe = onAuthStateChanged(instance, (user) => {
+          setAuth(firebaseAuth);
+          unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
             if (!user) clearSession();
             setAuthUser(user);
             setAuthReady(true);
@@ -461,7 +459,7 @@ function App() {
       })
       .catch((error: unknown) => {
         if (active) {
-          setOrdersError(error instanceof Error ? error.message : "Oturum saklanamadı.");
+          setOrdersError(error instanceof Error ? error.message : "Oturum başlatılamadı.");
           setAuthReady(true);
         }
       });
@@ -1029,16 +1027,14 @@ function App() {
         }
       }
       if (!auth) throw new Error("Oturum başlatılamadı. Sayfayı yenileyip tekrar deneyin.");
-      const { browserLocalPersistence, browserPopupRedirectResolver, GoogleAuthProvider, OAuthProvider, setPersistence, signInWithPopup } = await import("./firebase");
+      const { GoogleAuthProvider, OAuthProvider, signInWithPopup } = await import("./firebase");
       const currentAuth = auth;
       const provider =
         providerName === "google"
           ? new GoogleAuthProvider()
           : new OAuthProvider("apple.com");
       if (providerName === "apple") provider.addScope("name");
-      await setPersistence(currentAuth, browserLocalPersistence);
-      const user = currentAuth.currentUser ?? (await signInWithPopup(currentAuth, provider, browserPopupRedirectResolver)).user;
-      await getAccessToken(user);
+      const user = currentAuth.currentUser ?? (await signInWithPopup(currentAuth, provider)).user;
       await getAccessToken(user);
       setAuthUser(user);
       await customerRequest<{ id: string }>(user, 
@@ -1081,11 +1077,10 @@ function App() {
     }
     setOrdersError("");
     try {
-      const { browserLocalPersistence, browserPopupRedirectResolver, GoogleAuthProvider, OAuthProvider, setPersistence, signInWithPopup } = await import("./firebase");
+      const { GoogleAuthProvider, OAuthProvider, signInWithPopup } = await import("./firebase");
       const provider = providerName === "google" ? new GoogleAuthProvider() : new OAuthProvider("apple.com");
       if (providerName === "apple") provider.addScope("name");
-      await setPersistence(auth, browserLocalPersistence);
-      const user = auth.currentUser ?? (await signInWithPopup(auth, provider, browserPopupRedirectResolver)).user;
+      const user = auth.currentUser ?? (await signInWithPopup(auth, provider)).user;
       await getAccessToken(user); // Firebase yalnızca burada: sunucu oturumu alınır
       setAuthUser(user);
     } catch (error) {
