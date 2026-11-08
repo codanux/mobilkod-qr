@@ -2,6 +2,7 @@ export interface DeviceNotificationInfo {
   isIOS: boolean;
   isStandalone: boolean;
   isAndroid: boolean;
+  isChromeIOS: boolean;
   isSupported: boolean;
   permission: NotificationPermission | "unsupported";
   guideTitle: string;
@@ -14,6 +15,7 @@ export function getDeviceNotificationInfo(): DeviceNotificationInfo {
       isIOS: false,
       isStandalone: false,
       isAndroid: false,
+      isChromeIOS: false,
       isSupported: false,
       permission: "unsupported",
       guideTitle: "Bildirim İzni",
@@ -25,6 +27,7 @@ export function getDeviceNotificationInfo(): DeviceNotificationInfo {
   const isIOS =
     /iphone|ipad|ipod/.test(ua) ||
     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const isChromeIOS = isIOS && ua.includes("crios");
   const isAndroid = /android/.test(ua);
   const isStandalone =
     window.matchMedia("(display-mode: standalone)").matches ||
@@ -34,19 +37,37 @@ export function getDeviceNotificationInfo(): DeviceNotificationInfo {
 
   if (isIOS) {
     if (!isStandalone) {
+      if (isChromeIOS) {
+        return {
+          isIOS,
+          isStandalone,
+          isAndroid,
+          isChromeIOS,
+          isSupported: false,
+          permission: "unsupported",
+          guideTitle: "iPhone Chrome için Bildirim Açma",
+          guideSteps: [
+            "Apple, iPhone'da web bildirimlerini normal sekmede kilitler; uygulamanın ana ekranda olmasını şart koşar.",
+            "Chrome'un sağ üst/alt köşesindeki 'Paylaş' simgesine dokunun.",
+            "Menüyü kaydırıp 'Ana Ekrana Ekle' seçeneğini seçin.",
+            "Ana ekrana gelen QR Menü simgesine dokunarak açın.",
+            "Açılan uygulamada Bildirimleri Aç dediğinizde izin penceresi çıkacaktır.",
+          ],
+        };
+      }
       return {
         isIOS,
         isStandalone,
         isAndroid,
+        isChromeIOS,
         isSupported: false,
         permission: "unsupported",
-        guideTitle: "iPhone için Bildirim Rehberi",
+        guideTitle: "iPhone için Bildirim Açma",
         guideSteps: [
-          "Apple, iPhone'da web bildirimlerini yalnızca ana ekrana eklenen uygulamalarda destekler (Chrome sekmesinde desteklenmez).",
-          "Bu siteyi Safari tarayıcısında açın.",
-          "Alttaki 'Paylaş' simgesine (kare içinden çıkan yukarı ok ⬆️) dokunun.",
+          "Apple, iPhone'da web bildirimlerini yalnızca ana ekrana eklenen uygulamalarda destekler.",
+          "Tarayıcınızın 'Paylaş' simgesine (⬆️) dokunun.",
           "Menüden 'Ana Ekrana Ekle' seçeneğini seçin.",
-          "Ardından uygulamayı ana ekrandaki simgesinden açıp bildirimleri etkinleştirin.",
+          "Ana ekrandaki QR Menü simgesinden açarak bildirimleri etkinleştirin.",
         ],
       };
     }
@@ -54,12 +75,13 @@ export function getDeviceNotificationInfo(): DeviceNotificationInfo {
       isIOS,
       isStandalone,
       isAndroid,
+      isChromeIOS,
       isSupported: hasNotification,
       permission,
       guideTitle: "iPhone Bildirim Ayarları",
       guideSteps: [
-        "iPhone Ayarlar uygulamasını açın.",
-        "Listeden 'Bildirimler' veya eklediğiniz web uygulamasını bulun.",
+        "iPhone 'Ayarlar' uygulamasını açın.",
+        "Listeden 'Bildirimler' veya eklediğiniz QR Menü uygulamasını bulun.",
         "'Bildirimlere İzin Ver' seçeneğini açık konuma getirin.",
       ],
     };
@@ -70,6 +92,7 @@ export function getDeviceNotificationInfo(): DeviceNotificationInfo {
       isIOS,
       isStandalone,
       isAndroid,
+      isChromeIOS,
       isSupported: hasNotification,
       permission,
       guideTitle: "Android (Chrome) Bildirim Rehberi",
@@ -85,6 +108,7 @@ export function getDeviceNotificationInfo(): DeviceNotificationInfo {
     isIOS,
     isStandalone,
     isAndroid,
+    isChromeIOS,
     isSupported: hasNotification,
     permission,
     guideTitle: "Tarayıcı Bildirim Rehberi",
@@ -94,4 +118,3 @@ export function getDeviceNotificationInfo(): DeviceNotificationInfo {
     ],
   };
 }
-

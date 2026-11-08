@@ -285,7 +285,7 @@ function App() {
       if (!pushRegistered) {
         const deviceInfo = getDeviceNotificationInfo();
         if (deviceInfo.isIOS && !deviceInfo.isStandalone) {
-          throw new Error("iPhone'da bildirimler için siteyi Safari ile açıp 'Ana Ekrana Ekle' yapmanız gerekir.");
+          throw new Error("iPhone'da bildirim alabilmek için siteyi Paylaş menüsünden 'Ana Ekrana Ekle' yapıp ana ekrandan açmanız gerekir.");
         }
         if (typeof Notification === "undefined") throw new Error("Bu tarayıcı push bildirimlerini desteklemiyor.");
         let permission = Notification.permission;
