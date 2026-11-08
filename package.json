@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build --mode production",
+    "build:client": "tsc -b && vite build --mode production",
+    "build:ssr": "BUILD_SSR=1 vite build",
+    "build": "npm run build:client && npm run build:ssr",
     "lint": "oxlint",
     "test": "node --test tests/*.test.js",
     "preview": "vite preview"

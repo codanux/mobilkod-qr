@@ -1,10 +1,13 @@
 import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
+import { createRoot, hydrateRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+const root = document.getElementById('root')!
+const ssrShell = document.getElementById('ssr-shell')
+
+if (ssrShell) {
+  hydrateRoot(root, <StrictMode><App /></StrictMode>)
+} else {
+  createRoot(root).render(<StrictMode><App /></StrictMode>)
+}

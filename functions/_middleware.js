@@ -1,4 +1,17 @@
-import { route, renderHtml, seoContent, sitemap } from "../seo/seo-utils.js";
+import { route, seoContent, sitemap } from "../seo/seo-utils.js";
+
+let _renderPage;
+async function getRenderPage() {
+  if (!_renderPage) {
+    try {
+      const mod = await import("./ssr.js");
+      _renderPage = mod.renderPage;
+    } catch {
+      _renderPage = null;
+    }
+  }
+  return _renderPage;
+}
 
 const canonicalOrigin = "https://qr.mobilkod.com";
 const apiOrigin = "https://pos.mobilkod.com";
@@ -53,7 +66,32 @@ export async function onRequest(context) {
     headers.delete("last-modified");
     headers.set("cache-control", "no-store");
     if (new URL(request.url).origin !== canonicalOrigin) headers.set("X-Robots-Tag", "noindex, nofollow");
-    const html = request.method === "HEAD" ? null : renderHtml(await response.text(), seo, { path: apiPath, data });
+    let html = null;
+    if (request.method !== "HEAD") {
+      const template = await response.text();
+      const renderPage = await getRenderPage();
+      let ssrBody = null;
+      if (renderPage) {
+        try {
+          const ssrData = page.type === "directory" ? data.restaurants ?? data : data;
+          ssrBody = await renderPage(page.type, ssrData);
+        } catch (ssrError) {
+          console.error("SSR render başarısız, ham SEO içeriğine düşülüyor", ssrError);
+          ssrBody = seo.body;
+        }
+      } else {
+        ssrBody = seo.body;
+      }
+      const bootstrap = { path: apiPath, data };
+      const json = (value) => JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
+      const escape = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+      const meta = `<meta name="description" content="${escape(seo.description)}"><link rel="canonical" href="${escape(seo.canonical)}"><meta property="og:type" content="website"><meta property="og:title" content="${escape(seo.title)}"><meta property="og:description" content="${escape(seo.description)}"><meta property="og:url" content="${escape(seo.canonical)}"><meta name="twitter:card" content="summary"><meta name="twitter:title" content="${escape(seo.title)}"><meta name="twitter:description" content="${escape(seo.description)}">${seo.structured ? `<script type="application/ld+json">${json(seo.structured)}</script>` : ""}`;
+      if (!template.includes('<div id="root"></div>') || !template.includes("</head>")) throw new Error("HTML şablonu geçersiz");
+      html = template
+        .replace(/<title>[^<]*<\/title>/, `<title>${escape(seo.title)}</title>`)
+        .replace(/<meta name="description"[^>]*\/?>/, meta)
+        .replace('<div id="root"></div>', `<div id="root">${ssrBody}</div><script id="qr-public-data" type="application/json">${json(bootstrap)}</script>`);
+    }
     return new Response(html, { status: response.status, headers });
   } catch (error) {
     console.error("SEO sayfası oluşturulamadı", error);
