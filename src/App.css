@@ -113,6 +113,17 @@
 .status-dialog h2 { margin:11px 0;font-size:23px; }.status-dialog p { margin:0 0 20px;color:#77746c;font-size:13px;line-height:1.55; }
 .status-icon { width:55px;height:55px;margin-bottom:18px;border-radius:50%;background:#f7f2e7;display:grid;place-items:center;color:#b38a3c; }
 .status-icon.approved { background:#e9f2e9;color:#4f8057;font-size:27px; }.status-icon.rejected { background:#f7e9e6;color:#ae5548;font-size:29px; }
+.status-icon.info { background:#eef4fb;color:#2f6ebd;font-size:24px; }
+.notification-guide-overlay { z-index:15;align-items:center; }
+.notification-guide-dialog { width:min(100%,430px);align-items:center;text-align:center;padding:32px 24px 26px; }
+.notification-guide-dialog h2 { margin:8px 0 10px;font-size:22px; }
+.notification-guide-dialog p.notification-guide-desc { margin:0 0 16px;color:#77746c;font-size:13px;line-height:1.55; }
+.notification-guide-steps { width:100%;margin-bottom:20px;padding:14px 16px;background:#fbf9f4;border:1px solid #e5dfd2;border-radius:14px;text-align:left;box-sizing:border-box; }
+.notification-guide-steps ol { margin:0;padding-left:18px;line-height:1.65;font-size:12px;color:#49453c; }
+.notification-guide-steps li { margin-bottom:5px; }
+.notification-guide-steps li:last-child { margin-bottom:0; }
+.notification-guide-dialog .auth-actions { width:100%; }
+.notification-guide-link { margin-top:8px;padding:0;border:0;background:none;color:#9b7a2d;font-size:12px;font-weight:600;text-decoration:underline;cursor:pointer; }
 .orders-page { max-width:760px;min-height:calc(100vh - 130px);margin:38px auto;padding:0 24px; }
 .profile-page { max-width:680px;min-height:calc(100vh - 130px);margin:38px auto;padding:0 24px; }
 .profile-heading { margin-bottom:22px; }.profile-heading .eyebrow { color:#9b8c6b; }

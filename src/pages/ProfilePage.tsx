@@ -1,6 +1,5 @@
 import type { User } from "firebase/auth";
 import type { ContactProfile } from "../types";
-import { getDeviceNotificationInfo } from "../utils/notificationGuide";
 import { AddressIcon } from "./AddressIcon";
 
 type Props = {
@@ -17,6 +16,7 @@ type Props = {
   pushBusy: boolean;
   pushMessage: string;
   pushError: string;
+  onOpenNotificationGuide: () => void;
   onLogin: (provider: "google" | "apple") => void;
   onChange: (field: "name" | "phone" | "shareWithRestaurant", value: string | boolean) => void;
   onOpenAddresses: () => void;
@@ -27,7 +27,7 @@ type Props = {
 
 export function ProfilePage({
   authReady, user, loading, ordersError, draft, profileError, actionError, saved, saving,
-  pushRegistered, pushBusy, pushMessage, pushError, onLogin, onChange, onOpenAddresses,
+  pushRegistered, pushBusy, pushMessage, pushError, onOpenNotificationGuide, onLogin, onChange, onOpenAddresses,
   onToggleNotifications, onSave, onSignOut,
 }: Props) {
   const defaultAddress = draft.addresses.find((address) => address.isDefault) ?? draft.addresses[0];
@@ -102,22 +102,11 @@ export function ProfilePage({
               </button>
               {pushMessage && <p className="profile-saved" role="status">{pushMessage}</p>}
               {pushError && <p className="inline-error" role="alert">{pushError}</p>}
-              {!pushRegistered && (() => {
-                const guide = getDeviceNotificationInfo();
-                if (pushError || guide.permission === "denied" || (guide.isIOS && !guide.isStandalone)) {
-                  return (
-                    <div className="notification-device-guide">
-                      <strong>{guide.guideTitle}</strong>
-                      <ol>
-                        {guide.guideSteps.map((step, idx) => (
-                          <li key={idx}>{step}</li>
-                        ))}
-                      </ol>
-                    </div>
-                  );
-                }
-                return null;
-              })()}
+              {!pushRegistered && (
+                <button type="button" className="notification-guide-link" onClick={onOpenNotificationGuide}>
+                  Bildirimler nasıl açılır?
+                </button>
+              )}
             </section>
             <p className="profile-privacy-copy">Adresleriniz hesabınızda saklanır. Siparişte yalnızca seçtiğiniz adres paylaşılır; kayıtlı konum yol ücretini hesaplamak için kullanılır, restorana gönderilmez.</p>
             {(profileError || actionError) && <p className="inline-error" role="alert">{profileError || actionError}</p>}

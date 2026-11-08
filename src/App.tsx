@@ -239,12 +239,14 @@ function App() {
   const [pushBusy, setPushBusy] = useState(false);
   const [pushMessage, setPushMessage] = useState("");
   const [pushError, setPushError] = useState("");
+  const [notificationGuideOpen, setNotificationGuideOpen] = useState(false);
   const [addressLocationBusy, setAddressLocationBusy] = useState<number | null>(null);
   const [expandedAddressId, setExpandedAddressId] = useState<string | null>(null);
   const [addressSavingId, setAddressSavingId] = useState<string | null>(null);
   const [savedAddressId, setSavedAddressId] = useState<string | null>(null);
   const productDialogScroll = useRef<HTMLDivElement>(null);
   const orderType = menu?.isTableQr ? "DINE_IN" : "DELIVERY";
+  const notificationDeviceInfo = useMemo(() => getDeviceNotificationInfo(), []);
 
   const getPushMessaging = useCallback(async () => {
     const { isSupported, getMessaging } = await import("firebase/messaging");
@@ -276,29 +278,42 @@ function App() {
     });
   }, []);
 
+  async function requestOrderNotifications(user: User): Promise<boolean> {
+    const deviceInfo = getDeviceNotificationInfo();
+    if (deviceInfo.isIOS && !deviceInfo.isStandalone) {
+      throw new Error("iPhone'da bildirim alabilmek için siteyi Paylaş menüsünden 'Ana Ekrana Ekle' yapıp ana ekrandan açmanız gerekir.");
+    }
+    if (typeof Notification === "undefined") {
+      throw new Error("Bu tarayıcı push bildirimlerini desteklemiyor.");
+    }
+    let permission = Notification.permission;
+    if (permission === "default") {
+      permission = await Notification.requestPermission();
+    }
+    if (permission !== "granted") {
+      throw new Error(permission === "denied"
+        ? "Bildirim izni kapalı. Tarayıcı ayarlarından QR Menü bildirimlerine izin verin."
+        : "Bildirim izni verilmedi.");
+    }
+    const { getToken } = await import("firebase/messaging");
+    const { messaging, registration } = await getPushMessaging();
+    const token = await getToken(messaging, { vapidKey: firebaseConfig.vapidKey, serviceWorkerRegistration: registration });
+    if (!token) throw new Error("Firebase push token'ı alınamadı.");
+    await syncPushToken(user, token);
+    setPushRegistered(true);
+    setPushMessage("Sipariş durum bildirimleri açıldı.");
+    return true;
+  }
+
   async function toggleOrderNotifications() {
     if (!authUser) return;
     setPushBusy(true);
     setPushError("");
     setPushMessage("");
     try {
-      if (!pushRegistered) {
-        const deviceInfo = getDeviceNotificationInfo();
-        if (deviceInfo.isIOS && !deviceInfo.isStandalone) {
-          throw new Error("iPhone'da bildirim alabilmek için siteyi Paylaş menüsünden 'Ana Ekrana Ekle' yapıp ana ekrandan açmanız gerekir.");
-        }
-        if (typeof Notification === "undefined") throw new Error("Bu tarayıcı push bildirimlerini desteklemiyor.");
-        let permission = Notification.permission;
-        if (permission === "default") permission = await Notification.requestPermission();
-        if (permission !== "granted") {
-          throw new Error(permission === "denied"
-            ? "Bildirim izni kapalı. Aşağıdaki yönlendirmeyi takip ederek izin verebilirsiniz."
-            : "Bildirim izni verilmedi.");
-        }
-      }
-      const { getToken, deleteToken } = await import("firebase/messaging");
-      const { messaging, registration } = await getPushMessaging();
       if (pushRegistered) {
+        const { getToken, deleteToken } = await import("firebase/messaging");
+        const { messaging, registration } = await getPushMessaging();
         const token = await getToken(messaging, { vapidKey: firebaseConfig.vapidKey, serviceWorkerRegistration: registration });
         if (token) {
           await customerRequest(authUser, "/m/notifications/token", {
@@ -310,14 +325,11 @@ function App() {
         setPushRegistered(false);
         setPushMessage("Sipariş bildirimleri kapatıldı.");
       } else {
-        const token = await getToken(messaging, { vapidKey: firebaseConfig.vapidKey, serviceWorkerRegistration: registration });
-        if (!token) throw new Error("Firebase push token'ı alınamadı.");
-        await syncPushToken(authUser, token);
-        setPushRegistered(true);
-        setPushMessage("Sipariş durum bildirimleri açıldı.");
+        await requestOrderNotifications(authUser);
       }
     } catch (error) {
       setPushError(error instanceof Error ? error.message : "Bildirim tercihi kaydedilemedi.");
+      setNotificationGuideOpen(true);
     } finally {
       setPushBusy(false);
     }
@@ -1068,6 +1080,14 @@ function App() {
       setCartNote("");
       setCartOpen(false);
       setOrderSent(true);
+      if (!pushRegistered) {
+        try {
+          await requestOrderNotifications(user);
+        } catch (error) {
+          setPushError(error instanceof Error ? error.message : "Sipariş bildirimleri açılamadı.");
+          setNotificationGuideOpen(true);
+        }
+      }
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Sipariş gönderilemedi.");
     } finally {
@@ -1381,6 +1401,7 @@ function App() {
               draft={contactDraft} profileError={profileError} actionError={actionError}
               saved={profileSaved} saving={profileSaving} pushRegistered={pushRegistered}
               pushBusy={pushBusy} pushMessage={pushMessage} pushError={pushError}
+              onOpenNotificationGuide={() => setNotificationGuideOpen(true)}
               onLogin={(provider) => void signInForOrders(provider)}
               onChange={(field, value) => {
                 setProfileSaved(false);
@@ -1472,6 +1493,7 @@ function App() {
           draft={contactDraft} profileError={profileError} actionError={actionError}
           saved={profileSaved} saving={profileSaving} pushRegistered={pushRegistered}
           pushBusy={pushBusy} pushMessage={pushMessage} pushError={pushError}
+          onOpenNotificationGuide={() => setNotificationGuideOpen(true)}
           onLogin={(provider) => void signInForOrders(provider)}
           onChange={(field, value) => {
             setProfileSaved(false);
@@ -1776,6 +1798,29 @@ function App() {
             <div className="auth-actions">
               <button className="primary-button" onClick={() => { setOrderSent(false); navigateView("orders"); }}>Siparişlerimi gör</button>
               <button className="secondary-button" onClick={() => setOrderSent(false)}>Menüye dön</button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {notificationGuideOpen && (
+        <div className="overlay notification-guide-overlay" onMouseDown={(event) => event.target === event.currentTarget && setNotificationGuideOpen(false)}>
+          <section className="dialog notification-guide-dialog" role="dialog" aria-modal="true" aria-labelledby="notification-guide-title">
+            <div className="status-icon info" aria-hidden="true">🔔</div>
+            <span className="dialog-kicker">SİPARİŞ BİLDİRİMLERİ</span>
+            <h2 id="notification-guide-title">{notificationDeviceInfo.guideTitle}</h2>
+            <p className="notification-guide-desc">
+              {pushError || "Siparişinizin durumunu (onaylandı, hazırlanıyor, teslimatta) anlık takip edebilmek için bildirimleri açabilirsiniz."}
+            </p>
+            <div className="notification-guide-steps">
+              <ol>
+                {notificationDeviceInfo.guideSteps.map((step, idx) => (
+                  <li key={idx}>{step}</li>
+                ))}
+              </ol>
+            </div>
+            <div className="auth-actions">
+              <button type="button" className="primary-button" onClick={() => setNotificationGuideOpen(false)}>Anladım</button>
             </div>
           </section>
         </div>
