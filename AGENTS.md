@@ -1,17 +1,9 @@
-# QR Menu agent guide
+<!-- BEGIN:nextjs-agent-rules -->
 
-Read [README.md](README.md) before changing the frontend.
+## This is NOT the Next.js you know
 
-- This repository is a Vite/React static client. The Cloud backend, database,
-  auth verification, price calculation, order approval, and report behavior
-  belong to `../pos-cloud/`.
-- Treat POS Cloud controller validation and response types as authoritative.
-  Update both projects' API documentation when their contract changes.
-- Firebase ID token is used only at login (`POST /m/auth/session`); profile/order/history routes use the Cloud-issued session token via `src/api.ts` (`customerRequest`). Never
-  store Firebase private credentials or trust browser-provided prices.
-- Keep table QR (`DINE_IN`) and restaurant directory delivery (`DELIVERY`)
-  behavior distinct. Maintain route parsing and SPA fallback when adding URLs.
-- Preserve visible API errors; do not make a failed request look successful or
-  silently substitute an empty menu.
-- Run `npm run lint` and `npm run build`. Do not claim Firebase/CORS or live
-  order flow was tested unless it was exercised against configured services.
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

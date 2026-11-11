@@ -1,0 +1,30 @@
+{
+  "Home": {
+    "title": "Restoranlar",
+    "description": "QR menü ve online sipariş platformu",
+    "cta": "Restoranınızı Kaydettirin"
+  },
+  "Register": {
+    "title": "Mobilkod POS'a Kayıt Ol",
+    "description": "Kaydınızdan sonra POS uygulamasını indirip siparişleri kabul edebilirsiniz.",
+    "restaurantName": "İşletme adı",
+    "email": "E-posta",
+    "password": "Şifre",
+    "phone": "Telefon",
+    "phoneOptional": "(isteğe bağlı)",
+    "submit": "Kayıt Ol / POS'u İndir →",
+    "submitting": "Kaydediliyor…",
+    "comingSoon": "Form yakında aktif olacak."
+  },
+  "Nav": {
+    "menu": "Menü",
+    "orders": "Siparişlerim",
+    "profile": "Bilgilerim",
+    "restaurants": "Restoranlar"
+  },
+  "Common": {
+    "loading": "Yükleniyor…",
+    "error": "Bir hata oluştu.",
+    "notFound": "Sayfa bulunamadı."
+  }
+}

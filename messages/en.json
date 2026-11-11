@@ -1,0 +1,30 @@
+{
+  "Home": {
+    "title": "Restaurants",
+    "description": "QR menu and online ordering platform",
+    "cta": "Register Your Restaurant"
+  },
+  "Register": {
+    "title": "Register for Mobilkod POS",
+    "description": "After registration, download the POS app and start accepting orders.",
+    "restaurantName": "Business name",
+    "email": "Email",
+    "password": "Password",
+    "phone": "Phone",
+    "phoneOptional": "(optional)",
+    "submit": "Register / Download POS →",
+    "submitting": "Registering…",
+    "comingSoon": "Form coming soon."
+  },
+  "Nav": {
+    "menu": "Menu",
+    "orders": "My Orders",
+    "profile": "My Profile",
+    "restaurants": "Restaurants"
+  },
+  "Common": {
+    "loading": "Loading…",
+    "error": "An error occurred.",
+    "notFound": "Page not found."
+  }
+}

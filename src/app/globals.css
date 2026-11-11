@@ -1,0 +1,12 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --color-brand: #18181b;
+  --color-brand-dark: #09090b;
+}
+
+html,
+body {
+  overscroll-behavior: none;
+}
