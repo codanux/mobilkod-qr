@@ -83,14 +83,19 @@ export function AuthDialog({ onClose, onNavigate }: Props) {
               </div>
             </div>
             {onNavigate && (
-              <div className="flex flex-col gap-1">
-                {([["orders", ClipboardList, "Siparişlerim"], ["profile", User, "Bilgilerim"]] as const).map(([tab, Icon, label]) => (
-                  <Button key={tab} variant="secondary" fullWidth onClick={() => { onNavigate(tab); onClose(); }}
-                    className="justify-start font-semibold">
-                    <Icon size={16} className="text-slate-500 dark:text-zinc-400 shrink-0" />
-                    <span className="flex-1 text-left">{label}</span>
-                    <ChevronRight size={15} className="text-slate-300 dark:text-zinc-600 shrink-0" />
-                  </Button>
+              <div className="rounded-2xl border border-slate-100 dark:border-zinc-800 divide-y divide-slate-100 dark:divide-zinc-800 overflow-hidden">
+                {([["orders", ClipboardList, "Siparişlerim", "Geçmiş ve aktif siparişler"], ["profile", User, "Bilgilerim", "Adres ve iletişim bilgileri"]] as const).map(([tab, Icon, label, desc]) => (
+                  <button key={tab} type="button" onClick={() => { onNavigate(tab); onClose(); }}
+                    className="w-full flex items-center gap-3 px-3.5 py-3 text-left bg-white dark:bg-zinc-900 hover:bg-slate-50 dark:hover:bg-zinc-800 active:bg-slate-100 dark:active:bg-zinc-700 transition-colors">
+                    <span className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center shrink-0">
+                      <Icon size={17} className="text-slate-600 dark:text-zinc-300" />
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm font-semibold text-slate-900 dark:text-zinc-100">{label}</span>
+                      <span className="block text-xs text-slate-400 dark:text-zinc-500 truncate">{desc}</span>
+                    </span>
+                    <ChevronRight size={16} className="text-slate-300 dark:text-zinc-600 shrink-0" />
+                  </button>
                 ))}
               </div>
             )}
